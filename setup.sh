@@ -21,9 +21,13 @@ install_pkg() {
 }
 
 # ──────────────────────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMMIT_HASH="$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")"
+
 echo ""
 echo "══════════════════════════════════════════════════"
 echo "  Oh-my-Boy Setup"
+echo "  commit: $COMMIT_HASH"
 echo "══════════════════════════════════════════════════"
 
 # ─── 1. zellij ────────────────────────────────────────────────────────
