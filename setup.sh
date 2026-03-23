@@ -156,87 +156,84 @@ echo "── vbox command ──────────────────
 VBOX_BIN="$HOME/.local/bin/vbox"
 
 mkdir -p "$HOME/.local/bin"
-cat > "$VBOX_BIN" <<'SCRIPT'
-#!/usr/bin/env bash
-# [vibebox]
-set -euo pipefail
-
-usage() {
-  echo "Usage:"
-  echo "  vbox new <session-name>   Create and attach to a new tmux+zellij session"
-  echo "  vbox attach <name>        Attach to an existing session"
-  echo "  vbox ls                   List all vbox sessions"
-  echo "  vbox exit                 Kill current zellij and tmux session"
-  exit 1
-}
-
-if [ $# -lt 1 ]; then
-  usage
-fi
-
-CMD="$1"
-
-case "$CMD" in
-  exit)
-    # kill the tmux session — this also terminates zellij running inside it
-    if [ -n "${TMUX:-}" ]; then
-      tmux kill-session
-    else
-      echo "Not inside a tmux session."
-    fi
-    ;;
-  attach)
-    if [ $# -lt 2 ]; then
-      echo "Usage: vbox attach <session-name>"
-      exit 1
-    fi
-    SESSION_NAME="$(whoami)-$2"
-    if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
-      tmux attach-session -t "$SESSION_NAME"
-    else
-      echo "Session '$SESSION_NAME' not found."
-      echo "Available sessions:"
-      tmux list-sessions 2>/dev/null || echo "  (none)"
-      exit 1
-    fi
-    ;;
-  ls)
-    PREFIX="$(whoami)-"
-    FOUND=0
-    while IFS= read -r line; do
-      NAME="${line%%:*}"
-      if [[ "$NAME" == "$PREFIX"* ]]; then
-        echo "  ${NAME#$PREFIX}"
-        FOUND=1
-      fi
-    done < <(tmux list-sessions 2>/dev/null || true)
-    if [ "$FOUND" -eq 0 ]; then
-      echo "No vbox sessions."
-    fi
-    ;;
-  new)
-    if [ $# -lt 2 ]; then
-      echo "Usage: vbox new <session-name>"
-      exit 1
-    fi
-    SESSION_NAME="$(whoami)-$2"
-    if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
-      echo "Session '$SESSION_NAME' already exists. Use 'vbox attach $2' instead."
-      exit 1
-    else
-      tmux new-session -d -s "$SESSION_NAME" 'zellij'
-      tmux set-option -t "$SESSION_NAME" status-left " $2 "
-      tmux attach-session -t "$SESSION_NAME"
-    fi
-    ;;
-  -h|--help)
-    usage
-    ;;
-  *)
-    usage
-    ;;
-esac
-SCRIPT
+printf '%s\n' '#!/usr/bin/env bash' \
+  '# [vibebox]' \
+  'set -euo pipefail' \
+  '' \
+  'usage() {' \
+  '  echo "Usage:"' \
+  '  echo "  vbox new <session-name>   Create and attach to a new tmux+zellij session"' \
+  '  echo "  vbox attach <name>        Attach to an existing session"' \
+  '  echo "  vbox ls                   List all vbox sessions"' \
+  '  echo "  vbox exit                 Kill current zellij and tmux session"' \
+  '  exit 1' \
+  '}' \
+  '' \
+  'if [ $# -lt 1 ]; then' \
+  '  usage' \
+  'fi' \
+  '' \
+  'CMD="$1"' \
+  '' \
+  'case "$CMD" in' \
+  '  exit)' \
+  '    if [ -n "${TMUX:-}" ]; then' \
+  '      tmux kill-session' \
+  '    else' \
+  '      echo "Not inside a tmux session."' \
+  '    fi' \
+  '    ;;' \
+  '  attach)' \
+  '    if [ $# -lt 2 ]; then' \
+  '      echo "Usage: vbox attach <session-name>"' \
+  '      exit 1' \
+  '    fi' \
+  '    SESSION_NAME="$(whoami)-$2"' \
+  '    if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then' \
+  '      tmux attach-session -t "$SESSION_NAME"' \
+  '    else' \
+  '      echo "Session '\''$SESSION_NAME'\'' not found."' \
+  '      echo "Available sessions:"' \
+  '      tmux list-sessions 2>/dev/null || echo "  (none)"' \
+  '      exit 1' \
+  '    fi' \
+  '    ;;' \
+  '  ls)' \
+  '    PREFIX="$(whoami)-"' \
+  '    FOUND=0' \
+  '    while IFS= read -r line; do' \
+  '      NAME="${line%%:*}"' \
+  '      if [[ "$NAME" == "$PREFIX"* ]]; then' \
+  '        echo "  ${NAME#$PREFIX}"' \
+  '        FOUND=1' \
+  '      fi' \
+  '    done < <(tmux list-sessions 2>/dev/null || true)' \
+  '    if [ "$FOUND" -eq 0 ]; then' \
+  '      echo "No vbox sessions."' \
+  '    fi' \
+  '    ;;' \
+  '  new)' \
+  '    if [ $# -lt 2 ]; then' \
+  '      echo "Usage: vbox new <session-name>"' \
+  '      exit 1' \
+  '    fi' \
+  '    SESSION_NAME="$(whoami)-$2"' \
+  '    if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then' \
+  '      echo "Session '\''$SESSION_NAME'\'' already exists. Use '\''vbox attach $2'\'' instead."' \
+  '      exit 1' \
+  '    else' \
+  '      tmux new-session -d -s "$SESSION_NAME" '\''zellij'\''' \
+  '      tmux set-option -t "$SESSION_NAME" status-left " $2 "' \
+  '      tmux attach-session -t "$SESSION_NAME"' \
+  '    fi' \
+  '    ;;' \
+  '  -h|--help)' \
+  '    usage' \
+  '    ;;' \
+  '  *)' \
+  '    usage' \
+  '    ;;' \
+  'esac' > "$VBOX_BIN"
 chmod +x "$VBOX_BIN"
 info "Installed vbox command to $VBOX_BIN"
 
