@@ -126,7 +126,7 @@ fi
 OSC52_BIN="$HOME/.local/bin/osc52-copy"
 printf '%s\n' '#!/usr/bin/env bash' \
   'data=$(base64 | tr -d '\''\n'\'')' \
-  'printf '\''\033]52;c;%s\a'\'' "$data"' > "$OSC52_BIN"
+  'printf '\''\033]52;c;%s\a'\'' "$data" > /dev/tty' > "$OSC52_BIN"
 chmod +x "$OSC52_BIN"
 info "Installed osc52-copy helper"
 
