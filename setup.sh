@@ -175,10 +175,7 @@ CMD="$1"
 
 case "$CMD" in
   exit)
-    # kill zellij first, then the tmux session
-    if command -v zellij &>/dev/null && [ -n "${ZELLIJ:-}" ]; then
-      zellij action quit
-    fi
+    # kill the tmux session — this also terminates zellij running inside it
     if [ -n "${TMUX:-}" ]; then
       tmux kill-session
     else
