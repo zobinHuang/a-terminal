@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/zobinHuang/a-terminal/main/setup.sh
 ## Usage
 
 ```bash
-boy <name>            # Create and attach to a new tmux+zellij session
+boy new <name>        # Create and attach to a new tmux+zellij session
 boy attach <name>     # Attach to an existing session
 boy exit              # Kill current zellij+tmux session
 ```

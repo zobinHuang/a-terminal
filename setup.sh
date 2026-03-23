@@ -161,9 +161,9 @@ set -euo pipefail
 
 usage() {
   echo "Usage:"
-  echo "  boy <session-name>    Create and attach to a new tmux+zellij session"
-  echo "  boy attach <name>     Attach to an existing session"
-  echo "  boy exit              Kill current zellij and tmux session"
+  echo "  boy new <session-name>   Create and attach to a new tmux+zellij session"
+  echo "  boy attach <name>        Attach to an existing session"
+  echo "  boy exit                 Kill current zellij and tmux session"
   exit 1
 }
 
@@ -200,17 +200,25 @@ case "$CMD" in
       exit 1
     fi
     ;;
-  -h|--help)
-    usage
-    ;;
-  *)
-    SESSION_NAME="$(whoami)-$CMD"
+  new)
+    if [ $# -lt 2 ]; then
+      echo "Usage: boy new <session-name>"
+      exit 1
+    fi
+    SESSION_NAME="$(whoami)-$2"
     if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
-      tmux attach-session -t "$SESSION_NAME"
+      echo "Session '$SESSION_NAME' already exists. Use 'boy attach $2' instead."
+      exit 1
     else
       tmux new-session -d -s "$SESSION_NAME" 'zellij'
       tmux attach-session -t "$SESSION_NAME"
     fi
+    ;;
+  -h|--help)
+    usage
+    ;;
+  *)
+    usage
     ;;
 esac
 SCRIPT
@@ -228,9 +236,9 @@ fi
 echo ""
 echo "══════════════════════════════════════════════════"
 echo "  Setup complete!"
-echo "  boy <name>           Create a new tmux+zellij session"
-echo "  boy attach <name>    Attach to an existing session"
-echo "  boy exit             Kill current zellij+tmux session"
+echo "  boy new <name>       Create a new tmux+zellij session"
+echo "  boy attach <name>   Attach to an existing session"
+echo "  boy exit            Kill current zellij+tmux session"
 echo ""
 echo "  yazi                 Browse files"
 echo "  claude               Start Claude Code"
