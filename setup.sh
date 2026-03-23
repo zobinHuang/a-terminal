@@ -154,13 +154,9 @@ echo ""
 echo "── vbox command ──────────────────────────────"
 
 VBOX_BIN="$HOME/.local/bin/vbox"
-VBOX_MARKER="# [vibebox]"
 
-if [ -f "$VBOX_BIN" ] && grep -qF "$VBOX_MARKER" "$VBOX_BIN" 2>/dev/null; then
-  info "vbox command already installed"
-else
-  mkdir -p "$HOME/.local/bin"
-  cat > "$VBOX_BIN" <<'SCRIPT'
+mkdir -p "$HOME/.local/bin"
+cat > "$VBOX_BIN" <<'SCRIPT'
 #!/usr/bin/env bash
 # [vibebox]
 set -euo pipefail
@@ -241,9 +237,8 @@ case "$CMD" in
     ;;
 esac
 SCRIPT
-  chmod +x "$VBOX_BIN"
-  info "Installed vbox command to $VBOX_BIN"
-fi
+chmod +x "$VBOX_BIN"
+info "Installed vbox command to $VBOX_BIN"
 
 # ensure ~/.local/bin is in PATH
 if ! echo "$PATH" | grep -q "$HOME/.local/bin"; then
