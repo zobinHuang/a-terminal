@@ -87,30 +87,32 @@ fi
 YAZI_DIR="$HOME/.config/yazi"
 YAZI_CONFIG="$YAZI_DIR/yazi.toml"
 YAZI_KEYMAP="$YAZI_DIR/keymap.toml"
-YAZI_MARKER="# [vibebox] patched"
 
 mkdir -p "$YAZI_DIR"
 
-if [ -f "$YAZI_CONFIG" ] && grep -qF "$YAZI_MARKER" "$YAZI_CONFIG" 2>/dev/null; then
-  info "yazi.toml already patched"
-else
-  cat > "$YAZI_CONFIG" <<'TOML'
-# [vibebox] patched
+# create no-op previewer plugin for PDFs
+NOOP_PLUGIN_DIR="$YAZI_DIR/plugins/noop.yazi"
+mkdir -p "$NOOP_PLUGIN_DIR"
+printf '%s\n' \
+  'local M = {}' \
+  'function M:peek() end' \
+  'function M:seek() end' \
+  'return M' > "$NOOP_PLUGIN_DIR/init.lua"
+
+cat > "$YAZI_CONFIG" <<'TOML'
 [mgr]
 show_hidden = true
 ratio = [0, 1, 3]
 
-[preview]
-image_enabled = false
+[plugin]
+prepend_previewers = [
+  { mime = "application/pdf", run = "noop" },
+  { mime = "image/*",         run = "noop" },
+]
 TOML
-  info "Patched yazi.toml"
-fi
+info "Patched yazi.toml (disabled PDF/image preview)"
 
-if [ -f "$YAZI_KEYMAP" ] && grep -qF "$YAZI_MARKER" "$YAZI_KEYMAP" 2>/dev/null; then
-  info "keymap.toml already patched"
-else
-  cat > "$YAZI_KEYMAP" <<'TOML'
-# [vibebox] patched
+cat > "$YAZI_KEYMAP" <<'TOML'
 [[mgr.prepend_keymap]]
 on = [ "c", "r" ]
 desc = "Copy relative path (from git root) to clipboard"
@@ -121,8 +123,7 @@ on = [ "s" ]
 desc = "Search file contents (grep via ripgrep)"
 run = "search --via=rg"
 TOML
-  info "Patched keymap.toml"
-fi
+info "Patched keymap.toml"
 
 # ─── patch tmux config ────────────────────────────────────────────────
 TMUX_CONF="$HOME/.tmux.conf"
