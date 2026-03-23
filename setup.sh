@@ -21,8 +21,7 @@ install_pkg() {
 }
 
 # ──────────────────────────────────────────────────────────────────────
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-COMMIT_HASH="$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")"
+COMMIT_HASH="$(curl -fsSL https://api.github.com/repos/zobinHuang/a-terminal/commits/main 2>/dev/null | grep -m1 '"sha"' | cut -d'"' -f4 | cut -c1-7 || echo "unknown")"
 
 echo ""
 echo "══════════════════════════════════════════════════"
