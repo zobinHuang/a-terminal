@@ -21,11 +21,11 @@ install_pkg() {
 }
 
 # ──────────────────────────────────────────────────────────────────────
-COMMIT_HASH="$(curl -fsSL https://api.github.com/repos/zobinHuang/a-terminal/commits/main 2>/dev/null | grep -m1 '"sha"' | cut -d'"' -f4 | cut -c1-7 || echo "unknown")"
+COMMIT_HASH="$(curl -fsSL https://api.github.com/repos/zobinHuang/vibebox/commits/main 2>/dev/null | grep -m1 '"sha"' | cut -d'"' -f4 | cut -c1-7 || echo "unknown")"
 
 echo ""
 echo "══════════════════════════════════════════════════"
-echo "  Oh-my-Boy Setup"
+echo "  VibeBox Setup"
 echo "  commit: $COMMIT_HASH"
 echo "══════════════════════════════════════════════════"
 
@@ -70,7 +70,7 @@ fi
 YAZI_DIR="$HOME/.config/yazi"
 YAZI_CONFIG="$YAZI_DIR/yazi.toml"
 YAZI_KEYMAP="$YAZI_DIR/keymap.toml"
-YAZI_MARKER="# [oh-my-boy] patched"
+YAZI_MARKER="# [vibebox] patched"
 
 mkdir -p "$YAZI_DIR"
 
@@ -78,7 +78,7 @@ if [ -f "$YAZI_CONFIG" ] && grep -qF "$YAZI_MARKER" "$YAZI_CONFIG" 2>/dev/null; 
   info "yazi.toml already patched"
 else
   cat > "$YAZI_CONFIG" <<'TOML'
-# [oh-my-boy] patched
+# [vibebox] patched
 [mgr]
 show_hidden = true
 ratio = [0, 1, 3]
@@ -90,7 +90,7 @@ if [ -f "$YAZI_KEYMAP" ] && grep -qF "$YAZI_MARKER" "$YAZI_KEYMAP" 2>/dev/null; 
   info "keymap.toml already patched"
 else
   cat > "$YAZI_KEYMAP" <<'TOML'
-# [oh-my-boy] patched
+# [vibebox] patched
 [[mgr.prepend_keymap]]
 on = [ "c", "r" ]
 desc = "Copy relative path (from git root) to clipboard"
@@ -106,13 +106,13 @@ fi
 
 # ─── patch tmux config ────────────────────────────────────────────────
 TMUX_CONF="$HOME/.tmux.conf"
-TMUX_MARKER="# [oh-my-boy] patched"
+TMUX_MARKER="# [vibebox] patched"
 
 if [ -f "$TMUX_CONF" ] && grep -qF "$TMUX_MARKER" "$TMUX_CONF" 2>/dev/null; then
   info ".tmux.conf already patched"
 else
   cat > "$TMUX_CONF" <<'TMUX'
-# [oh-my-boy] patched
+# [vibebox] patched
 set -g set-clipboard on
 set -g allow-passthrough on
 TMUX
@@ -121,13 +121,13 @@ fi
 
 # ─── patch vimrc ──────────────────────────────────────────────────────
 VIMRC="$HOME/.vimrc"
-VIMRC_MARKER="\" [oh-my-boy] patched"
+VIMRC_MARKER="\" [vibebox] patched"
 
 if [ -f "$VIMRC" ] && grep -qF "$VIMRC_MARKER" "$VIMRC" 2>/dev/null; then
   info ".vimrc already patched"
 else
   cat > "$VIMRC" <<'VIM'
-" [oh-my-boy] patched
+" [vibebox] patched
 syntax on
 set number
 VIM
@@ -146,27 +146,27 @@ else
   info "Claude Code installed"
 fi
 
-# ─── 4. install boy command ─────────────────────────────────────
+# ─── 4. install vbox command ─────────────────────────────────────
 echo ""
-echo "── boy command ──────────────────────────────"
+echo "── vbox command ──────────────────────────────"
 
-BOY_BIN="$HOME/.local/bin/boy"
-BOY_MARKER="# [oh-my-boy]"
+VBOX_BIN="$HOME/.local/bin/vbox"
+VBOX_MARKER="# [vibebox]"
 
-if [ -f "$BOY_BIN" ] && grep -qF "$BOY_MARKER" "$BOY_BIN" 2>/dev/null; then
-  info "boy command already installed"
+if [ -f "$VBOX_BIN" ] && grep -qF "$VBOX_MARKER" "$VBOX_BIN" 2>/dev/null; then
+  info "vbox command already installed"
 else
   mkdir -p "$HOME/.local/bin"
-  cat > "$BOY_BIN" <<'SCRIPT'
+  cat > "$VBOX_BIN" <<'SCRIPT'
 #!/usr/bin/env bash
-# [oh-my-boy]
+# [vibebox]
 set -euo pipefail
 
 usage() {
   echo "Usage:"
-  echo "  boy new <session-name>   Create and attach to a new tmux+zellij session"
-  echo "  boy attach <name>        Attach to an existing session"
-  echo "  boy exit                 Kill current zellij and tmux session"
+  echo "  vbox new <session-name>   Create and attach to a new tmux+zellij session"
+  echo "  vbox attach <name>        Attach to an existing session"
+  echo "  vbox exit                 Kill current zellij and tmux session"
   exit 1
 }
 
@@ -187,7 +187,7 @@ case "$CMD" in
     ;;
   attach)
     if [ $# -lt 2 ]; then
-      echo "Usage: boy attach <session-name>"
+      echo "Usage: vbox attach <session-name>"
       exit 1
     fi
     SESSION_NAME="$(whoami)-$2"
@@ -202,12 +202,12 @@ case "$CMD" in
     ;;
   new)
     if [ $# -lt 2 ]; then
-      echo "Usage: boy new <session-name>"
+      echo "Usage: vbox new <session-name>"
       exit 1
     fi
     SESSION_NAME="$(whoami)-$2"
     if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
-      echo "Session '$SESSION_NAME' already exists. Use 'boy attach $2' instead."
+      echo "Session '$SESSION_NAME' already exists. Use 'vbox attach $2' instead."
       exit 1
     else
       tmux new-session -d -s "$SESSION_NAME" 'zellij'
@@ -222,8 +222,8 @@ case "$CMD" in
     ;;
 esac
 SCRIPT
-  chmod +x "$BOY_BIN"
-  info "Installed boy command to $BOY_BIN"
+  chmod +x "$VBOX_BIN"
+  info "Installed vbox command to $VBOX_BIN"
 fi
 
 # ensure ~/.local/bin is in PATH
@@ -236,9 +236,9 @@ fi
 echo ""
 echo "══════════════════════════════════════════════════"
 echo "  Setup complete!"
-echo "  boy new <name>       Create a new tmux+zellij session"
-echo "  boy attach <name>   Attach to an existing session"
-echo "  boy exit            Kill current zellij+tmux session"
+echo "  vbox new <name>       Create a new tmux+zellij session"
+echo "  vbox attach <name>   Attach to an existing session"
+echo "  vbox exit            Kill current zellij+tmux session"
 echo ""
 echo "  yazi                 Browse files"
 echo "  claude               Start Claude Code"
