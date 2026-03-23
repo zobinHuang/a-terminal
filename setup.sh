@@ -116,7 +116,7 @@ cat > "$YAZI_KEYMAP" <<'TOML'
 [[mgr.prepend_keymap]]
 on = [ "c", "r" ]
 desc = "Copy relative path (from git root) to clipboard"
-run = "shell -- python3 -c \"import os,sys,subprocess,base64; root=subprocess.check_output(['git','rev-parse','--show-toplevel'],cwd=os.path.dirname(sys.argv[1]),stderr=subprocess.DEVNULL).decode().strip(); p=os.path.relpath(sys.argv[1],root); b=base64.b64encode(p.encode()).decode(); sys.stdout.write('\\x1b]52;c;'+b+'\\x07'); sys.stdout.flush()\" \"$0\""
+run = "shell -- python3 -c \"import os,sys,subprocess; root=subprocess.check_output(['git','rev-parse','--show-toplevel'],cwd=os.path.dirname(sys.argv[1]),stderr=subprocess.DEVNULL).decode().strip(); p=os.path.relpath(sys.argv[1],root); subprocess.run([os.path.expanduser('~/.local/bin/osc52-copy')],input=p.encode(),check=True)\" \"$0\""
 
 [[mgr.prepend_keymap]]
 on = [ "s" ]
