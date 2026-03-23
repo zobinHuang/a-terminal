@@ -167,6 +167,7 @@ usage() {
   echo "Usage:"
   echo "  vbox new <session-name>   Create and attach to a new tmux+zellij session"
   echo "  vbox attach <name>        Attach to an existing session"
+  echo "  vbox ls                   List all vbox sessions"
   echo "  vbox exit                 Kill current zellij and tmux session"
   exit 1
 }
@@ -201,6 +202,20 @@ case "$CMD" in
       exit 1
     fi
     ;;
+  ls)
+    PREFIX="$(whoami)-"
+    FOUND=0
+    while IFS= read -r line; do
+      NAME="${line%%:*}"
+      if [[ "$NAME" == "$PREFIX"* ]]; then
+        echo "  ${NAME#$PREFIX}"
+        FOUND=1
+      fi
+    done < <(tmux list-sessions 2>/dev/null || true)
+    if [ "$FOUND" -eq 0 ]; then
+      echo "No vbox sessions."
+    fi
+    ;;
   new)
     if [ $# -lt 2 ]; then
       echo "Usage: vbox new <session-name>"
@@ -212,6 +227,7 @@ case "$CMD" in
       exit 1
     else
       tmux new-session -d -s "$SESSION_NAME" 'zellij'
+      tmux set-option -t "$SESSION_NAME" status-left " $2 "
       tmux attach-session -t "$SESSION_NAME"
     fi
     ;;
@@ -239,6 +255,7 @@ echo "════════════════════════�
 echo "  Setup complete!"
 echo "  vbox new <name>       Create a new tmux+zellij session"
 echo "  vbox attach <name>   Attach to an existing session"
+echo "  vbox ls              List all vbox sessions"
 echo "  vbox exit            Kill current zellij+tmux session"
 echo ""
 echo "  yazi                 Browse files"
