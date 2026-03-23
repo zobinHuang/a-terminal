@@ -127,20 +127,15 @@ info "Patched keymap.toml"
 
 # ─── patch tmux config ────────────────────────────────────────────────
 TMUX_CONF="$HOME/.tmux.conf"
-TMUX_MARKER="# [vibebox] patched"
 
-if [ -f "$TMUX_CONF" ] && grep -qF "$TMUX_MARKER" "$TMUX_CONF" 2>/dev/null; then
-  info ".tmux.conf already patched"
-else
-  cat > "$TMUX_CONF" <<'TMUX'
+cat > "$TMUX_CONF" <<'TMUX'
 # [vibebox] patched
 set -g set-clipboard on
 set -g allow-passthrough on
 set -g mouse on
 set -g mode-keys vi
 TMUX
-  info "Patched .tmux.conf (OSC 52 clipboard, mouse, vi copy mode)"
-fi
+info "Patched .tmux.conf (OSC 52 clipboard, mouse, vi copy mode)"
 
 # ─── install OSC 52 clipboard helper ─────────────────────────────────
 OSC52_BIN="$HOME/.local/bin/osc52-copy"
@@ -158,35 +153,25 @@ info "Installed osc52-copy helper"
 # ─── patch zellij config ─────────────────────────────────────────────
 ZELLIJ_DIR="$HOME/.config/zellij"
 ZELLIJ_CONFIG="$ZELLIJ_DIR/config.kdl"
-ZELLIJ_MARKER="// [vibebox] patched"
 
 mkdir -p "$ZELLIJ_DIR"
 
-if [ -f "$ZELLIJ_CONFIG" ] && grep -qF "$ZELLIJ_MARKER" "$ZELLIJ_CONFIG" 2>/dev/null; then
-  info "zellij config already patched"
-else
-  printf '%s\n' \
-    '// [vibebox] patched' \
-    'copy_on_select true' \
-    "copy_command \"$HOME/.local/bin/osc52-copy\"" \
-    'scrollback_editor "vim"' > "$ZELLIJ_CONFIG"
-  info "Patched zellij config (OSC 52 clipboard via osc52-copy)"
-fi
+printf '%s\n' \
+  '// [vibebox] patched' \
+  'copy_on_select true' \
+  "copy_command \"$HOME/.local/bin/osc52-copy\"" \
+  'scrollback_editor "vim"' > "$ZELLIJ_CONFIG"
+info "Patched zellij config (OSC 52 clipboard via osc52-copy)"
 
 # ─── patch vimrc ──────────────────────────────────────────────────────
 VIMRC="$HOME/.vimrc"
-VIMRC_MARKER="\" [vibebox] patched"
 
-if [ -f "$VIMRC" ] && grep -qF "$VIMRC_MARKER" "$VIMRC" 2>/dev/null; then
-  info ".vimrc already patched"
-else
-  cat > "$VIMRC" <<'VIM'
+cat > "$VIMRC" <<'VIM'
 " [vibebox] patched
 syntax on
 set number
 VIM
-  info "Patched .vimrc (line numbers + syntax highlighting)"
-fi
+info "Patched .vimrc (line numbers + syntax highlighting)"
 
 # ─── 3. claude code ──────────────────────────────────────────────────
 echo ""
