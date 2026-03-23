@@ -1,4 +1,4 @@
-# a-terminal
+# Oh-my-Boy
 
 One-line setup for a vibe-coding terminal environment.
 
@@ -13,12 +13,12 @@ curl -fsSL https://raw.githubusercontent.com/zobinHuang/a-terminal/main/setup.sh
 - **Zellij** — terminal multiplexer for pane management
 - **Yazi** — terminal file manager
 - **Claude Code** — AI coding assistant
-- **aterminal** — command to launch a tmux+zellij session
+- **boy** — command to launch a tmux+zellij session
 
 ## Usage
 
 ```bash
-aterminal <session-name>
+boy <session-name>
 ```
 
 Opens a tmux session named `<username>-<session-name>` with zellij running inside. Re-running the same command reattaches to the existing session.

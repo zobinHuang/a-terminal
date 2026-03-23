@@ -128,15 +128,15 @@ else
   info "Claude Code installed"
 fi
 
-# ─── 4. install aterminal command ─────────────────────────────────────
+# ─── 4. install boy command ─────────────────────────────────────
 echo ""
-echo "── aterminal command ──────────────────────────────"
+echo "── boy command ──────────────────────────────"
 
-ATERMINAL_BIN="$HOME/.local/bin/aterminal"
+ATERMINAL_BIN="$HOME/.local/bin/boy"
 ATERMINAL_MARKER="# [a-terminal]"
 
 if [ -f "$ATERMINAL_BIN" ] && grep -qF "$ATERMINAL_MARKER" "$ATERMINAL_BIN" 2>/dev/null; then
-  info "aterminal command already installed"
+  info "boy command already installed"
 else
   mkdir -p "$HOME/.local/bin"
   cat > "$ATERMINAL_BIN" <<'SCRIPT'
@@ -145,7 +145,7 @@ else
 set -euo pipefail
 
 if [ $# -lt 1 ]; then
-  echo "Usage: aterminal <session-name>"
+  echo "Usage: boy <session-name>"
   exit 1
 fi
 
@@ -159,7 +159,7 @@ else
 fi
 SCRIPT
   chmod +x "$ATERMINAL_BIN"
-  info "Installed aterminal command to $ATERMINAL_BIN"
+  info "Installed boy command to $ATERMINAL_BIN"
 fi
 
 # ensure ~/.local/bin is in PATH
@@ -172,7 +172,7 @@ fi
 echo ""
 echo "══════════════════════════════════════════════════"
 echo "  Setup complete!"
-echo "  • Run 'aterminal <name>' to start a tmux+zellij session"
+echo "  • Run 'boy <name>' to start a tmux+zellij session"
 echo "  • Run 'yazi' to browse files"
 echo "  • Run 'claude' to start Claude Code"
 echo "══════════════════════════════════════════════════"
