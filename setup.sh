@@ -161,7 +161,13 @@ printf '%s\n' \
   '// [vibebox] patched' \
   'copy_on_select true' \
   "copy_command \"$HOME/.local/bin/osc52-copy\"" \
-  'scrollback_editor "vim"' > "$ZELLIJ_CONFIG"
+  'scrollback_editor "vim"' \
+  '' \
+  'keybinds {' \
+  '  shared {' \
+  '    unbind "Ctrl o"' \
+  '  }' \
+  '}' > "$ZELLIJ_CONFIG"
 info "Patched zellij config (OSC 52 clipboard via osc52-copy)"
 
 # ─── patch vimrc ──────────────────────────────────────────────────────
