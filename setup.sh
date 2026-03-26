@@ -130,12 +130,54 @@ TMUX_CONF="$HOME/.tmux.conf"
 
 cat > "$TMUX_CONF" <<'TMUX'
 # [vibebox] patched
+
+# ─── clipboard & input ───────────────────────────────────────────────
 set -g set-clipboard on
 set -g allow-passthrough on
 set -g mouse on
 set -g mode-keys vi
+
+# ─── tab (window) navigation: Alt + Left/Right ──────────────────────
+bind -n M-Left previous-window
+bind -n M-Right next-window
+
+# ─── pane navigation: Alt + Up/Down/h/j/k/l ─────────────────────────
+bind -n M-Up select-pane -U
+bind -n M-Down select-pane -D
+bind -n M-h select-pane -L
+bind -n M-j select-pane -D
+bind -n M-k select-pane -U
+bind -n M-l select-pane -R
+
+# ─── pane splitting: Alt + \ and Alt + - ─────────────────────────────
+bind -n M-\\ split-window -h -c "#{pane_current_path}"
+bind -n M-- split-window -v -c "#{pane_current_path}"
+
+# ─── tab/pane management ─────────────────────────────────────────────
+bind -n M-t new-window -c "#{pane_current_path}"
+bind -n M-w kill-pane
+
+# ─── windows start at 1 (not 0) ─────────────────────────────────────
+set -g base-index 1
+setw -g pane-base-index 1
+set -g renumber-windows on
+
+# ─── status bar (tab bar) ────────────────────────────────────────────
+set -g status-position bottom
+set -g status-style "bg=#1e1e2e,fg=#cdd6f4"
+set -g status-left-length 30
+set -g status-right-length 30
+set -g status-left "#[bg=#89b4fa,fg=#1e1e2e,bold] #S #[default] "
+set -g status-right "#[fg=#a6adc8] %H:%M "
+setw -g window-status-format "#[fg=#a6adc8] #I:#W "
+setw -g window-status-current-format "#[bg=#45475a,fg=#89b4fa,bold] #I:#W "
+setw -g window-status-separator ""
+
+# ─── pane borders ────────────────────────────────────────────────────
+set -g pane-border-style "fg=#45475a"
+set -g pane-active-border-style "fg=#89b4fa"
 TMUX
-info "Patched .tmux.conf (OSC 52 clipboard, mouse, vi copy mode)"
+info "Patched .tmux.conf (tabs, panes, Alt keybindings, status bar)"
 
 # ─── install OSC 52 clipboard helper ─────────────────────────────────
 OSC52_BIN="$HOME/.local/bin/osc52-copy"
@@ -265,8 +307,7 @@ printf '%s\n' '#!/usr/bin/env bash' \
   '      echo "Session '\''$SESSION_NAME'\'' already exists. Use '\''vbox attach $2'\'' instead."' \
   '      exit 1' \
   '    else' \
-  '      tmux new-session -d -s "$SESSION_NAME" '\''zellij'\''' \
-  '      tmux set-option -t "$SESSION_NAME" status-left " $2 "' \
+  '      tmux new-session -d -s "$SESSION_NAME" -c "$HOME"' \
   '      tmux attach-session -t "$SESSION_NAME"' \
   '    fi' \
   '    ;;' \
