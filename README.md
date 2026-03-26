@@ -10,19 +10,44 @@ curl -fsSL -H 'Cache-Control: no-cache' https://raw.githubusercontent.com/zobinH
 
 ## What it installs
 
-- **Zellij** — terminal multiplexer for pane management
+- **tmux** — session, tab, and pane management (with custom keybindings)
 - **Yazi** — terminal file manager
 - **Claude Code** — AI coding assistant
-- **vbox** — command to launch a tmux+zellij session
+- **vbox** — command to manage tmux sessions
 
 ## Usage
 
 ```bash
-vbox new <name>        # Create and attach to a new tmux+zellij session
+vbox new <name>        # Create and attach to a new session
 vbox attach <name>     # Attach to an existing session
-vbox exit              # Kill current zellij+tmux session
+vbox ls                # List all vbox sessions
+vbox exit              # Kill current session
 ```
 
-Sessions are named `<username>-<name>`. Running `vbox attach <name>` on an existing session reattaches to it.
+## Keybindings
 
-Re-running the install script is safe — it skips anything already installed.
+### Tabs (windows)
+
+| Action | Keybinding |
+|---|---|
+| New tab | `Alt+t` |
+| Rename tab | `Alt+r` |
+| Switch tab left/right | `Alt+Left` / `Alt+Right` |
+| Close pane/tab | `Alt+w` |
+
+### Panes
+
+| Action | Keybinding |
+|---|---|
+| Split vertical | `Alt+\` |
+| Split horizontal | `Alt+-` |
+| Navigate panes | `Alt+Up/Down` or `Alt+h/j/k/l` |
+
+### Yazi (file manager)
+
+| Action | Keybinding |
+|---|---|
+| Copy relative path | `cr` |
+| Search file contents | `s` |
+
+Sessions are named `<username>-<name>`. Re-running the install script is safe — it always updates configs to the latest version.

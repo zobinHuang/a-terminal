@@ -42,21 +42,7 @@ echo "  VibeBox Setup"
 echo "  commit: $COMMIT_HASH"
 echo "══════════════════════════════════════════════════"
 
-# ─── 1. zellij ────────────────────────────────────────────────────────
-echo ""
-echo "── Zellij ───────────────────────────────────────"
-
-if command -v zellij &>/dev/null; then
-  info "Zellij already installed ($(zellij --version))"
-elif [ -x "$(vbox_bin zellij)" ]; then
-  info "Zellij already installed in vibebox env"
-else
-  warn "Installing Zellij …"
-  install_pkg zellij
-  info "Zellij installed"
-fi
-
-# ─── 2. yazi ─────────────────────────────────────────────────────────
+# ─── 1. yazi ─────────────────────────────────────────────────────────
 echo ""
 echo "── Yazi ─────────────────────────────────────────"
 
@@ -198,25 +184,6 @@ printf '%s\n' '#!/usr/bin/env bash' \
 chmod +x "$OSC52_BIN"
 info "Installed osc52-copy helper"
 
-# ─── patch zellij config ─────────────────────────────────────────────
-ZELLIJ_DIR="$HOME/.config/zellij"
-ZELLIJ_CONFIG="$ZELLIJ_DIR/config.kdl"
-
-mkdir -p "$ZELLIJ_DIR"
-
-printf '%s\n' \
-  '// [vibebox] patched' \
-  'copy_on_select true' \
-  "copy_command \"$HOME/.local/bin/osc52-copy\"" \
-  'scrollback_editor "vim"' \
-  '' \
-  'keybinds {' \
-  '  shared {' \
-  '    unbind "Ctrl o"' \
-  '  }' \
-  '}' > "$ZELLIJ_CONFIG"
-info "Patched zellij config (OSC 52 clipboard via osc52-copy)"
-
 # ─── patch vimrc ──────────────────────────────────────────────────────
 VIMRC="$HOME/.vimrc"
 
@@ -346,12 +313,21 @@ fi
 echo ""
 echo "══════════════════════════════════════════════════"
 echo "  Setup complete!"
-echo "  vbox new <name>       Create a new tmux+zellij session"
-echo "  vbox attach <name>   Attach to an existing session"
-echo "  vbox ls              List all vbox sessions"
-echo "  vbox exit            Kill current zellij+tmux session"
 echo ""
-echo "  yazi                 Browse files"
-echo "  claude               Start Claude Code"
+echo "  Sessions:"
+echo "    vbox new <name>       Create a new session"
+echo "    vbox attach <name>    Attach to existing session"
+echo "    vbox ls               List all sessions"
+echo "    vbox exit             Kill current session"
+echo ""
+echo "  Tabs:                   Panes:"
+echo "    Alt+t      new tab      Alt+\\     split vertical"
+echo "    Alt+r      rename tab   Alt+-      split horizontal"
+echo "    Alt+←/→    switch tab   Alt+↑/↓    switch pane"
+echo "    Alt+w      close pane   Alt+hjkl   switch pane"
+echo ""
+echo "  Tools:"
+echo "    yazi       file manager"
+echo "    claude     Claude Code"
 echo "══════════════════════════════════════════════════"
 echo ""
