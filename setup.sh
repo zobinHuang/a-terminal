@@ -123,16 +123,20 @@ set -g allow-passthrough on
 set -g mouse on
 set -g mode-keys vi
 
-# ─── quick navigation: Alt + arrows ──────────────────────────────────
-bind -n M-Left previous-window
-bind -n M-Right next-window
+# ─── quick pane navigation: Alt + arrows ─────────────────────────────
+bind -n M-Left select-pane -L
+bind -n M-Right select-pane -R
 bind -n M-Up select-pane -U
 bind -n M-Down select-pane -D
-# raw escape sequences for terminals that don't send M-arrow
-bind -n "\e[1;3D" previous-window
-bind -n "\e[1;3C" next-window
+bind -n "\e[1;3D" select-pane -L
+bind -n "\e[1;3C" select-pane -R
 bind -n "\e[1;3A" select-pane -U
 bind -n "\e[1;3B" select-pane -D
+# ─── quick tab navigation: Alt + Shift + arrows ─────────────────────
+bind -n S-M-Left previous-window
+bind -n S-M-Right next-window
+bind -n "\e[1;4D" previous-window
+bind -n "\e[1;4C" next-window
 
 # ─── tab mode: Ctrl+t → action ───────────────────────────────────────
 bind -n C-t switch-client -T tab_mode
