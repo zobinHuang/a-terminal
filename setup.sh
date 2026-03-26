@@ -189,8 +189,9 @@ set -g status-position bottom
 set -g status-style "bg=#1e1e2e,fg=#cdd6f4"
 set -g status-left-length 30
 set -g status-left "#[bg=#89b4fa,fg=#1e1e2e,bold] ◆ #S #[default] "
-set -g status-right-length 40
-set -g status-right "#[fg=#a6adc8] %Y-%m-%d │ %H:%M "
+set -g status-right-length 60
+set -g status-right "#[fg=#a6adc8] #(NOW=$(date +%%s); C=#{session_created}; E=$((NOW-C)); D=$((E/86400)); H=$(((E%%86400)/3600)); M=$(((E%%3600)/60)); [ $D -gt 0 ] && printf '%%dd %%dh' $D $H || { [ $H -gt 0 ] && printf '%%dh %%dm' $H $M || printf '%%dm' $M; }) │ %Y-%m-%d │ %H:%M "
+set -g status-interval 60
 setw -g window-status-format "#[fg=#a6adc8] #I:#W "
 setw -g window-status-current-format "#[bg=#45475a,fg=#89b4fa,bold] ▸ #I:#W "
 setw -g window-status-separator ""
