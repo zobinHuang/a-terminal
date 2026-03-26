@@ -123,20 +123,15 @@ set -g allow-passthrough on
 set -g mouse on
 set -g mode-keys vi
 
-# ─── quick pane navigation: Alt + arrows ─────────────────────────────
-bind -n M-Left select-pane -L
-bind -n M-Right select-pane -R
-bind -n M-Up select-pane -U
-bind -n M-Down select-pane -D
-bind -n "\e[1;3D" select-pane -L
-bind -n "\e[1;3C" select-pane -R
-bind -n "\e[1;3A" select-pane -U
-bind -n "\e[1;3B" select-pane -D
-# ─── quick tab navigation: Alt + Shift + arrows ─────────────────────
-bind -n S-M-Left previous-window
-bind -n S-M-Right next-window
-bind -n "\e[1;4D" previous-window
-bind -n "\e[1;4C" next-window
+# ─── smart navigation: Alt + arrows (pane first, then tab) ──────────
+bind -n M-Left if-shell -F "#{pane_at_left}" "previous-window" "select-pane -L"
+bind -n M-Right if-shell -F "#{pane_at_right}" "next-window" "select-pane -R"
+bind -n M-Up if-shell -F "#{pane_at_top}" "" "select-pane -U"
+bind -n M-Down if-shell -F "#{pane_at_bottom}" "" "select-pane -D"
+bind -n "\e[1;3D" if-shell -F "#{pane_at_left}" "previous-window" "select-pane -L"
+bind -n "\e[1;3C" if-shell -F "#{pane_at_right}" "next-window" "select-pane -R"
+bind -n "\e[1;3A" if-shell -F "#{pane_at_top}" "" "select-pane -U"
+bind -n "\e[1;3B" if-shell -F "#{pane_at_bottom}" "" "select-pane -D"
 
 # ─── tab mode: Ctrl+t → action ───────────────────────────────────────
 bind -n C-t switch-client -T tab_mode
