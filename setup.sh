@@ -253,7 +253,8 @@ printf '%s\n' '#!/usr/bin/env bash' \
   '  echo "  vbox new <session-name>   Create and attach to a new tmux+zellij session"' \
   '  echo "  vbox attach <name>        Attach to an existing session"' \
   '  echo "  vbox ls                   List all vbox sessions"' \
-  '  echo "  vbox exit                 Kill current zellij and tmux session"' \
+  '  echo "  vbox kill <name>          Kill a session by name"' \
+  '  echo "  vbox exit                 Kill current session"' \
   '  exit 1' \
   '}' \
   '' \
@@ -298,6 +299,19 @@ printf '%s\n' '#!/usr/bin/env bash' \
   '    done < <(tmux list-sessions 2>/dev/null || true)' \
   '    if [ "$FOUND" -eq 0 ]; then' \
   '      echo "No vbox sessions."' \
+  '    fi' \
+  '    ;;' \
+  '  kill)' \
+  '    if [ $# -lt 2 ]; then' \
+  '      echo "Usage: vbox kill <session-name>"' \
+  '      exit 1' \
+  '    fi' \
+  '    SESSION_NAME="$(whoami)-$2"' \
+  '    if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then' \
+  '      tmux kill-session -t "$SESSION_NAME"' \
+  '      echo "Killed session: $2"' \
+  '    else' \
+  '      echo "Session '\''$2'\'' not found."' \
   '    fi' \
   '    ;;' \
   '  new)' \
@@ -349,6 +363,7 @@ echo "  Sessions:"
 echo "    vbox new <name>       Create a new session"
 echo "    vbox attach <name>    Attach to existing session"
 echo "    vbox ls               List all sessions"
+echo "    vbox kill <name>      Kill a session"
 echo "    vbox exit             Kill current session"
 echo ""
 echo "  Tabs (Ctrl+t):          Panes (Ctrl+p):"
