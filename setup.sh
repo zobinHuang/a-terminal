@@ -118,6 +118,7 @@ cat > "$TMUX_CONF" <<'TMUX'
 # [vibebox] patched
 
 # ─── clipboard & input ───────────────────────────────────────────────
+set -g default-terminal "xterm-256color"
 set -g set-clipboard on
 set -g allow-passthrough on
 set -g mouse on
@@ -128,10 +129,6 @@ bind -n M-Left if-shell -F "#{pane_at_left}" "previous-window" "select-pane -L"
 bind -n M-Right if-shell -F "#{pane_at_right}" "next-window" "select-pane -R"
 bind -n M-Up if-shell -F "#{pane_at_top}" "" "select-pane -U"
 bind -n M-Down if-shell -F "#{pane_at_bottom}" "" "select-pane -D"
-bind -n "\e[1;3D" if-shell -F "#{pane_at_left}" "previous-window" "select-pane -L"
-bind -n "\e[1;3C" if-shell -F "#{pane_at_right}" "next-window" "select-pane -R"
-bind -n "\e[1;3A" if-shell -F "#{pane_at_top}" "" "select-pane -U"
-bind -n "\e[1;3B" if-shell -F "#{pane_at_bottom}" "" "select-pane -D"
 
 # ─── tab mode: Ctrl+t → action ───────────────────────────────────────
 bind -n C-t switch-client -T tab_mode
