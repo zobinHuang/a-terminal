@@ -123,6 +123,12 @@ set -g allow-passthrough on
 set -g mouse on
 set -g mode-keys vi
 
+# ─── quick navigation: Alt + arrows ──────────────────────────────────
+bind -n M-Left previous-window
+bind -n M-Right next-window
+bind -n M-Up select-pane -U
+bind -n M-Down select-pane -D
+
 # ─── tab mode: Ctrl+t → action ───────────────────────────────────────
 bind -n C-t switch-client -T tab_mode
 bind -T tab_mode n new-window -c "#{pane_current_path}"
