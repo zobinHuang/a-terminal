@@ -358,20 +358,31 @@ chmod +x "$VBOX_BIN"
 info "Installed vbox command to $VBOX_BIN"
 
 # ensure ~/.local/bin and vibebox env bin are in PATH
-VBOX_ENV_BIN="$(conda info --envs 2>/dev/null | grep "^${VBOX_ENV} " | awk '{print $NF}')/bin"
 SHELL_RC="$HOME/.bashrc"
 [ -n "${ZSH_VERSION:-}" ] && SHELL_RC="$HOME/.zshrc"
-
-PATH_LINE="export PATH=\"\$HOME/.local/bin:${VBOX_ENV_BIN}:\$PATH\""
 PATH_MARKER="# [vibebox] path"
 
-if grep -qF "$PATH_MARKER" "$SHELL_RC" 2>/dev/null; then
-  info "PATH already configured in $(basename "$SHELL_RC")"
-else
-  printf '\n%s\n%s\n' "$PATH_MARKER" "$PATH_LINE" >> "$SHELL_RC"
-  info "Added vibebox PATH to $(basename "$SHELL_RC")"
-  warn "Run 'source $SHELL_RC' or restart your shell"
+# find conda env bin (try multiple methods)
+VBOX_ENV_BIN=""
+if command -v conda &>/dev/null; then
+  CONDA_BASE="$(conda info --base 2>/dev/null || true)"
+  if [ -n "$CONDA_BASE" ] && [ -d "$CONDA_BASE/envs/$VBOX_ENV/bin" ]; then
+    VBOX_ENV_BIN="$CONDA_BASE/envs/$VBOX_ENV/bin"
+  fi
 fi
+
+# remove old vibebox path line if exists, then write fresh
+sed -i.bak "/$PATH_MARKER/,+1d" "$SHELL_RC" 2>/dev/null || true
+rm -f "${SHELL_RC}.bak"
+
+if [ -n "$VBOX_ENV_BIN" ]; then
+  PATH_LINE="export PATH=\"\$HOME/.local/bin:${VBOX_ENV_BIN}:\$PATH\""
+else
+  PATH_LINE="export PATH=\"\$HOME/.local/bin:\$PATH\""
+fi
+printf '\n%s\n%s\n' "$PATH_MARKER" "$PATH_LINE" >> "$SHELL_RC"
+info "Added vibebox PATH to $(basename "$SHELL_RC")"
+warn "Run 'source $SHELL_RC' or restart your shell"
 
 # ─── done ─────────────────────────────────────────────────────────────
 echo ""
