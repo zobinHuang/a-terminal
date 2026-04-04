@@ -5,7 +5,7 @@ One-line setup for a vibe-coding terminal environment.
 ## Installation
 
 ```bash
-curl -fsSL -H 'Cache-Control: no-cache' https://raw.githubusercontent.com/zobinHuang/vibebox/main/setup.sh | bash
+curl -fsSL -H 'Accept: application/vnd.github.v3.raw' https://api.github.com/repos/zobinHuang/vibebox/contents/setup.sh | bash
 ```
 
 ## What it installs
