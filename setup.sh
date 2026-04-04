@@ -18,6 +18,7 @@ install_pkg() {
     err "conda not found. Please install Miniconda or Anaconda first."
     return 1
   fi
+  export CONDA_PLUGINS_AUTO_ACCEPT_TOS=yes
   # create env if it doesn't exist
   if ! conda env list | grep -q "^${VBOX_ENV} "; then
     conda create -y -n "$VBOX_ENV" -c conda-forge --no-default-packages < /dev/null 2>/dev/null
