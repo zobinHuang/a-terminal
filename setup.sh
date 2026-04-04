@@ -19,10 +19,10 @@ install_pkg() {
     return 1
   fi
   # create env if it doesn't exist
-  if ! conda env list | grep -q "^${VBOX_ENV} "; then
-    conda create -y -n "$VBOX_ENV" -c conda-forge --no-default-packages < /dev/null 2>/dev/null
+  if ! conda env list 2>/dev/null | grep -q "^${VBOX_ENV} "; then
+    conda create -y -n "$VBOX_ENV" -c conda-forge --no-default-packages < /dev/null 2>&1 || return 1
   fi
-  conda install -y -n "$VBOX_ENV" -c conda-forge "$@" < /dev/null
+  conda install -y -n "$VBOX_ENV" -c conda-forge "$@" < /dev/null 2>&1 || return 1
 }
 
 # helper: resolve path to a binary installed in the vibebox env
@@ -52,8 +52,11 @@ elif [ -x "$(vbox_bin yazi)" ]; then
   info "Yazi already installed in vibebox env"
 else
   warn "Installing Yazi …"
-  install_pkg yazi
-  info "Yazi installed"
+  if install_pkg yazi; then
+    info "Yazi installed"
+  else
+    err "Yazi installation failed — install manually: conda install -n vibebox -c conda-forge yazi"
+  fi
 fi
 
 # Nerd Font (required for yazi icons — not available via conda)
@@ -239,8 +242,11 @@ if command -v claude &>/dev/null; then
   info "Claude Code already installed ($(claude --version 2>/dev/null || echo 'unknown version'))"
 else
   warn "Installing Claude Code …"
-  curl -fsSL https://claude.ai/install.sh | bash
-  info "Claude Code installed"
+  if curl -fsSL https://claude.ai/install.sh | bash; then
+    info "Claude Code installed"
+  else
+    err "Claude Code installation failed — install manually: https://claude.ai/install"
+  fi
 fi
 
 # ─── 4. install vbox command ─────────────────────────────────────
