@@ -42,7 +42,25 @@ echo "  VibeBox Setup"
 echo "  commit: $COMMIT_HASH"
 echo "══════════════════════════════════════════════════"
 
-# ─── 1. yazi ─────────────────────────────────────────────────────────
+# ─── 1. tmux ─────────────────────────────────────────────────────────
+echo ""
+echo "── tmux ─────────────────────────────────────────"
+
+TMUX_VERSION="$(tmux -V 2>/dev/null | awk '{print $2+0}' || echo 0)"
+if command -v tmux &>/dev/null && [ "$(echo "$TMUX_VERSION >= 3.3" | bc 2>/dev/null || echo 0)" -eq 1 ]; then
+  info "tmux already installed ($(tmux -V))"
+elif [ -x "$(vbox_bin tmux)" ]; then
+  info "tmux already installed in vibebox env"
+else
+  warn "Installing tmux (latest) …"
+  if install_pkg tmux; then
+    info "tmux installed"
+  else
+    err "tmux installation failed — install manually: conda install -n vibebox -c conda-forge tmux"
+  fi
+fi
+
+# ─── 2. yazi ─────────────────────────────────────────────────────────
 echo ""
 echo "── Yazi ─────────────────────────────────────────"
 
@@ -123,7 +141,7 @@ cat > "$TMUX_CONF" <<'TMUX'
 # ─── clipboard & input ───────────────────────────────────────────────
 set -g default-terminal "xterm-256color"
 set -g set-clipboard on
-if-shell "tmux -V | awk '{if($2+0 >= 3.3) exit 0; else exit 1}'" "set -g allow-passthrough on" ""
+set -g allow-passthrough on
 set -g mouse on
 set -g mode-keys vi
 
