@@ -65,7 +65,7 @@ Sessions are named `<username>-<name>`. Re-running the install script is safe �
 
 ## Vibe mode
 
-Each tmux pane gets an ambient internet-radio soundtrack that reacts to what it's doing. Idle pane → chill jazz. Running command or thinking Claude → tenser music, with intensity scaling on the process tree's CPU/memory load. Switching panes crossfades the radio dial (~3s, equal-power) to the new pane's vibe.
+Each tmux pane gets an ambient internet-radio soundtrack that reacts to what it's doing. Idle pane → LOOSE (lo-fi / ambient). Running command or thinking Claude → RAISE or TENSE, scaling with the process tree's CPU/memory load. Switching panes crossfades the radio dial (~3s, equal-power) to the new pane's vibe.
 
 Vibe mode is **opt-in**. Existing `vbox new <name>` behavior is unchanged.
 
@@ -94,26 +94,26 @@ That adds a single `source ~/.config/vibebox/shell-hooks.sh` line to your `~/.ba
 |---|---|
 | `m` | Toggle global mute (fade current slot to 0 / restore) |
 | `M` | Kill mpv processes for this session (re-enable with `vbox new --vibe`) |
-| `]` | Cycle mood **up** (auto → chill → mellow → intense → auto) — sticky, per tab |
-| `[` | Cycle mood **down** (auto → intense → mellow → chill → auto) — sticky, per tab |
+| `]` | Cycle mood **up** (auto → LOOSE → RAISE → TENSE → auto) — sticky, per tab |
+| `[` | Cycle mood **down** (auto → TENSE → RAISE → LOOSE → auto) — sticky, per tab |
 | `a` | Release manual mood for this tab, return to auto |
 
-A 🔒 next to the tier label means the mood is pinned manually for the current tab (use `Ctrl+t a` to release). Each tab carries its own mood, so locking "intense" on tab 1 doesn't affect tab 2.
+`[locked]` next to the tier label means the mood is pinned manually for the current tab (use `Ctrl+t a` to release). Each tab carries its own mood, so locking TENSE on tab 1 doesn't affect tab 2.
 
 The `running …` counter is also per-tab — it resets when you create a new tab and shows uptime since that tab opened, not the session.
 
 ### Status bar
 
 ```
-▄ ♫ Distant Thunder — Foggy Path
-^   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-|   scrolling now-playing
-vibe-level bar
+▂ LOOSE ♫ Distant Thunder — Foggy Path
+▄ RAISE ♫ Indie Anthem - Some Band
+▆ TENSE ♫ Rifftastic Rampage
+▆ TENSE [locked] ♫ Rifftastic Rampage
 ```
 
-- Vibe level: `▂` low (chill) · `▄` mid (mellow) · `▆` high (intense)
+- Three vibe levels: `▂ LOOSE` (low) · `▄ RAISE` (mid) · `▆ TENSE` (high)
 - 26-char marquee that scrolls the current track (mpv ICY metadata, falling back to `media-title`)
-- `▄🔒` (or whichever bar) when you've pinned the mood manually
+- `[locked]` is appended when you've pinned the mood manually with `Ctrl+t ] / [`
 - 🔇 muted when you've muted with `Ctrl+t m`
 - 📻 off-air if mpv died or the stream is unreachable
 
