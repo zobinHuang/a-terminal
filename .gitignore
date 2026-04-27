@@ -1,0 +1,13 @@
+# macOS Finder metadata
+.DS_Store
+
+# editor / scratch
+*.tmp
+*.bak
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# big bundled assets — keep local, don't push (GitHub blob limit)
+assets/
