@@ -182,7 +182,13 @@ info "Patched keymap.toml"
 # Colors here use ANSI names so the terminal's own palette drives them
 # instead of yazi's hex defaults (which often clash with terminal themes).
 cat > "$YAZI_THEME" <<'TOML'
-# [vibebox] no-Nerd-Font icon + theme override
+# [vibebox] no-Nerd-Font icon + theme override.
+# Color names below are the ones yazi documents:
+#   black/red/green/yellow/blue/magenta/cyan/white
+#   lightblack/lightred/.../lightwhite
+#   reset
+# (No `darkgray` — that's not a valid yazi color, and using it falls
+# back unpredictably depending on the terminal.)
 
 [manager]
 cwd             = { fg = "cyan" }
@@ -190,10 +196,10 @@ hovered         = { reversed = true }
 preview_hovered = { underline = true }
 find_keyword    = { fg = "yellow", italic = true }
 find_position   = { fg = "magenta", bg = "reset", italic = true }
-marker_copied   = { fg = "green",  bg = "green" }
-marker_cut      = { fg = "red",    bg = "red" }
-marker_marked   = { fg = "blue",   bg = "blue" }
-marker_selected = { fg = "yellow", bg = "yellow" }
+marker_copied   = { fg = "lightgreen",  bg = "lightgreen" }
+marker_cut      = { fg = "lightred",    bg = "lightred" }
+marker_marked   = { fg = "lightblue",   bg = "lightblue" }
+marker_selected = { fg = "lightyellow", bg = "lightyellow" }
 tab_active      = { reversed = true }
 tab_inactive    = {}
 tab_width       = 1
@@ -201,42 +207,42 @@ count_copied    = { fg = "white", bg = "green" }
 count_cut       = { fg = "white", bg = "red" }
 count_selected  = { fg = "white", bg = "blue" }
 border_symbol   = "│"
-border_style    = { fg = "gray" }
+border_style    = { fg = "lightblack" }
 
 [mode]
-normal_main = { fg = "black", bg = "blue",    bold = true }
-normal_alt  = { fg = "blue",  bg = "darkgray" }
-select_main = { fg = "black", bg = "yellow",  bold = true }
-select_alt  = { fg = "yellow", bg = "darkgray" }
-unset_main  = { fg = "black", bg = "magenta", bold = true }
-unset_alt   = { fg = "magenta", bg = "darkgray" }
+normal_main = { fg = "black", bg = "lightblue",    bold = true }
+normal_alt  = { fg = "lightblue",    bg = "lightblack" }
+select_main = { fg = "black", bg = "lightyellow",  bold = true }
+select_alt  = { fg = "lightyellow",  bg = "lightblack" }
+unset_main  = { fg = "black", bg = "lightmagenta", bold = true }
+unset_alt   = { fg = "lightmagenta", bg = "lightblack" }
 
 [status]
 # Empty separators avoid powerline arrows entirely.
 separator_open  = ""
 separator_close = ""
-separator_style = { fg = "darkgray", bg = "darkgray" }
+separator_style = { fg = "lightblack", bg = "lightblack" }
 
 [which]
 mask = { bg = "black" }
 cand = { fg = "cyan" }
-rest = { fg = "darkgray" }
+rest = { fg = "lightblack" }
 desc = { fg = "magenta" }
 separator       = "  "
-separator_style = { fg = "darkgray" }
+separator_style = { fg = "lightblack" }
 
+# Icons — wildcard catches every file/dir; the empty exts/globs/conds
+# arrays REPLACE (not append to) yazi's bundled per-language icon list.
+# Yazi caches the rendered icon set; users may need to run
+# `yazi --clear-cache` once after installing this theme.
 [icon]
-files = [
-  { name = "*", text = "·" },
-]
-dirs = [
-  { name = "*", text = "▸" },
-]
-exts  = []
 globs = []
 conds = []
+exts  = []
+files = [{ name = "*", text = "·" }]
+dirs  = [{ name = "*", text = "▸" }]
 TOML
-info "Patched theme.toml (plain icons + ANSI palette, no Nerd Font)"
+info "Patched theme.toml (plain icons + valid ANSI palette, no Nerd Font)"
 
 # ─── 2b. mpv + socat (vibe music engine) ─────────────────────────────
 echo ""
