@@ -165,6 +165,11 @@ cmd_start() {
   sess="$(_session_of "$target")"
   [ -n "$sess" ] || { log "start: no tmux session ($target)"; return 1; }
 
+  # Sweep mpv pairs from sessions tmux no longer has — this catches the
+  # case where a previous session ended without firing our cleanup (e.g.,
+  # session was created with older code that didn't write state files).
+  _reap_dead_sessions
+
   # already running for this session? bail out.
   local existing_a existing_b
   existing_a="$(tmux_get "$sess" "@vibe-mpv-a-pid")"
@@ -262,28 +267,55 @@ cmd_stop() {
 }
 
 # Called by the global session-closed hook with the dying session's id.
-# Reads cleanup state from the flat file (tmux options are already gone),
-# kills the mpv pair, removes the socket dir.
+# State-file path is the primary signal; the socket-dir pkill is a
+# belt-and-suspenders that catches mpv processes from older runs that
+# pre-date the state-file design (no state to read but still reachable
+# through their --input-ipc-server path).
 cmd_cleanup_session() {
   local sess="${1:-}"
   [ -n "$sess" ] || return 0
-  local sess_clean state_file
+  local sess_clean state_file sock_dir pid
   sess_clean="${sess#\$}"
   state_file="${VBOX_RUNTIME_DIR}/sess-${sess_clean}.state"
-  [ -f "$state_file" ] || return 0
-  # shellcheck disable=SC1090  # dynamic path is intentional
-  . "$state_file"
-  for pid in "${PID_A:-}" "${PID_B:-}"; do
-    [ -n "$pid" ] || continue
-    if kill -0 "$pid" 2>/dev/null; then
-      kill "$pid" 2>/dev/null || true
-      sleep 0.1
-      kill -9 "$pid" 2>/dev/null || true
+  sock_dir="${VBOX_RUNTIME_DIR}/sess-${sess_clean}"
+
+  # primary path: read the state file written by cmd_start
+  if [ -f "$state_file" ]; then
+    # shellcheck disable=SC1090  # dynamic path is intentional
+    . "$state_file"
+    for pid in "${PID_A:-}" "${PID_B:-}"; do
+      [ -n "$pid" ] || continue
+      if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null || true
+        sleep 0.1
+        kill -9 "$pid" 2>/dev/null || true
+      fi
+    done
+    rm -f "$state_file"
+    log "cleanup-session: state-file reap for $sess (pids=${PID_A:-} ${PID_B:-})"
+  fi
+
+  # fallback: any mpv whose --input-ipc-server points into this sock_dir
+  if [ -d "$sock_dir" ]; then
+    pkill -f "input-ipc-server=${sock_dir}/" 2>/dev/null || true
+    rm -rf "$sock_dir" 2>/dev/null
+    log "cleanup-session: pkill-by-socket reap for $sess ($sock_dir)"
+  fi
+}
+
+# Sweep state files for sessions tmux no longer knows about. Cheap to call
+# from cmd_start so each new vibe session also self-heals any orphans the
+# previous run leaked.
+_reap_dead_sessions() {
+  local sf sf_sess
+  for sf in "$VBOX_RUNTIME_DIR"/sess-*.state; do
+    [ -e "$sf" ] || continue
+    sf_sess="${sf##*/sess-}"; sf_sess="${sf_sess%.state}"
+    # tmux session ids look like $0, $1, ... — prefix with $ for the lookup
+    if ! tmux has-session -t "\$${sf_sess}" 2>/dev/null; then
+      cmd_cleanup_session "\$${sf_sess}"
     fi
   done
-  [ -n "${SOCK_DIR:-}" ] && rm -rf "$SOCK_DIR" 2>/dev/null
-  rm -f "$state_file"
-  log "cleanup-session: reaped mpv pair for $sess (pids=${PID_A:-} ${PID_B:-})"
 }
 
 # ─── crossfade ───────────────────────────────────────────────────────
@@ -581,6 +613,7 @@ Usage: vbox-music <command> [args...]
   start [target]        spawn mpv slot pair for the given (or current) session
   stop  [target]        kill mpv slot pair for the given (or current) session
   sync-attached         pause/unpause active slot per session_attached count
+  reap                  reap mpv pairs from sessions tmux no longer has
   crossfade <url>       crossfade active slot → inactive slot playing <url>
   focus <pane_id>       called by tmux pane-focus-in hook
   set-state <p> <s>     s ∈ {idle,running,thinking}
@@ -603,6 +636,7 @@ case "$cmd" in
   bump)             cmd_bump  "$@" ;;
   sync-attached)    cmd_sync_attached "$@" ;;
   cleanup-session)  cmd_cleanup_session "$@" ;;
+  reap)             _reap_dead_sessions ;;
   -h|--help|help|"") usage ;;
   *) usage; exit 1 ;;
 esac
