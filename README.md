@@ -107,10 +107,16 @@ The `running …` counter is also per-tab — it resets when you create a new ta
 ### Status bar
 
 ```
-· ▂ ♫ Distant Thunder — Foggy Path        # idle pane, low volume
-✦ ▅ ♫ Indie Anthem - Some Band            # mid intensity, ~half volume
-✺ █ [locked] ♫ Rifftastic Rampage         # peak intensity, full volume, mood pinned
+| LOOSE · | Vol ▂ | ♫ Distant Thunder — Foggy Path
+| RAISE ✦ | Vol ▅ | ♫ Indie Anthem - Some Band
+| 🔐 TENSE ✺ | Vol █ | ♫ Rifftastic Rampage
 ```
+
+Three pipe-separated sections, each in its own color (Catppuccin palette):
+
+- **vibe** (`TIER GLYPH`) — tier label from `vibes.conf`, glyph from the level-based pulse loop. Color scales with intensity level: green → sky → yellow → peach → red. A `🔐` prefix appears when the mood is pinned with `Ctrl+t ] / [`.
+- **volume** (`Vol GLYPH`) — blue, volume glyph one of `▂▃▄▅▆▇█`.
+- **song** (`♫ <marquee>`) — mauve note + text-coloured 26-char marquee that scrolls the current track.
 
 - **Intensity** is a single character that loops through a level-specific sequence each tick. Higher levels add one more glyph to the loop, so the cycle gets richer as intensity climbs:
   - level 1 (0.0–0.2): `· • · • …`

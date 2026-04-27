@@ -832,13 +832,19 @@ cmd_tick() {
   [ -n "$pane" ] || pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null)"
   _refresh_pane_intensity "$pane"
 
-  local intensity intensity_g override locked=""
+  local intensity level intensity_g override
   intensity="$(tmux_get_pane "$pane" "@vibe-intensity")"
   intensity="${intensity:-0}"
+  level="$(awk -v i="$intensity" 'BEGIN{n=int(i*5)+1; if(n<1)n=1; if(n>5)n=5; print n}')"
   intensity_g="$(_intensity_glyph "$intensity")"
 
+  # Tier label still comes from vibes.conf so user-defined names render.
+  local tier_data level_label
+  tier_data="$(_tier_for_intensity "$intensity")"
+  IFS=$'\t' read -r level_label _ _ _ <<<"$tier_data"
+  [ -n "$level_label" ] || level_label='?'
+
   override="$(tmux_get_win "$pane" "@vibe-mood-override")"
-  [ -n "$override" ] && locked=" [locked]"
 
   local vol vol_glyph
   vol="$(tmux_get "$sess" "@vibe-volume")"
@@ -850,7 +856,35 @@ cmd_tick() {
   # marquee position is per-window so each tab keeps its own scroll
   marquee="$(_marquee "$pane" "$song" 26)"
 
-  printf '%s %s%s ♫ %s' "$intensity_g" "$vol_glyph" "$locked" "$marquee"
+  # ── per-section color palette (Catppuccin) ─────────────────────────
+  # Tier color scales with the intensity level (1=cool, 5=hot) — works
+  # for arbitrary user-defined tier labels in vibes.conf.
+  local C_PIPE='#[fg=#6c7086,nobold]'
+  local C_VOL='#[fg=#89b4fa,nobold]'
+  local C_NOTE='#[fg=#cba6f7,nobold]'
+  local C_SONG='#[fg=#cdd6f4,nobold]'
+  local C_LOCK='#[fg=#f9e2af,bold]'
+  local C_TIER
+  case "$level" in
+    1) C_TIER='#[fg=#a6e3a1,bold]' ;;  # green
+    2) C_TIER='#[fg=#89dceb,bold]' ;;  # sky
+    3) C_TIER='#[fg=#f9e2af,bold]' ;;  # yellow
+    4) C_TIER='#[fg=#fab387,bold]' ;;  # peach
+    5) C_TIER='#[fg=#f38ba8,bold]' ;;  # red
+    *) C_TIER='#[fg=#cdd6f4,bold]' ;;
+  esac
+
+  local lock_part=""
+  [ -n "$override" ] && lock_part="${C_LOCK}🔐 "
+
+  # | [🔐 ]TIER GLYPH | Vol VOLGLYPH | ♫ <marquee>
+  printf '%s| %s%s%s %s %s| %sVol %s %s| %s♫ %s%s' \
+    "$C_PIPE" \
+    "$lock_part" "$C_TIER" "$level_label" "$intensity_g" \
+    "$C_PIPE" \
+    "$C_VOL"  "$vol_glyph" \
+    "$C_PIPE" \
+    "$C_NOTE" "$C_SONG" "$marquee"
 }
 
 cmd_sync_attached() {
