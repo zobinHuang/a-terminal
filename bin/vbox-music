@@ -1,0 +1,525 @@
+#!/usr/bin/env bash
+# [vibebox] vbox-music — vibe radio dispatcher
+#
+# Subcommands:
+#   start                 spawn the two mpv slot processes for this session
+#   stop                  kill the mpv slot processes for this session
+#   crossfade <url>       fade from active slot to inactive slot playing <url>
+#   tick                  recompute focused pane's intensity → station, emit emoji
+#   focus <pane_id>       called when pane focus changes
+#   set-state <pane> <s>  s ∈ {idle,running,thinking}; called from shell/claude hooks
+#   mute                  toggle global mute
+#   bump <delta>          bump intensity by ±0.25 for 60s
+#
+# State lives in tmux user options: per-pane (@vibe-state, @vibe-intensity,
+# @vibe-station, @vibe-bump-*) and per-session (@vibe-mpv-{a,b}-{sock,pid},
+# @vibe-active-slot, @vibe-current-pane, @vibe-muted).
+#
+# All output to stderr is suppressed in production paths because this is
+# called from tmux status-right and tmux hooks where stray text would corrupt
+# the UI. Logging goes to ~/.cache/vibebox/music.log.
+
+set -u
+
+# ─── paths ───────────────────────────────────────────────────────────
+VBOX_LOG_DIR="${HOME}/.cache/vibebox"
+VBOX_LOG="${VBOX_LOG_DIR}/music.log"
+VBOX_RUNTIME_DIR="${TMPDIR:-/tmp}/vbox-mpv-$(id -u)"
+VBOX_CONFIG_DIR="${HOME}/.config/vibebox"
+STATIONS_CONF="${VBOX_CONFIG_DIR}/stations.conf"
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+IPC_HELPER="${SCRIPT_DIR}/vbox-mpv-ipc"
+[ -x "$IPC_HELPER" ] || IPC_HELPER="$(command -v vbox-mpv-ipc 2>/dev/null || echo "")"
+
+mkdir -p "$VBOX_LOG_DIR" "$VBOX_RUNTIME_DIR"
+chmod 700 "$VBOX_RUNTIME_DIR" 2>/dev/null || true
+
+log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$VBOX_LOG" 2>/dev/null || true; }
+
+# ─── tmux option helpers (silent on missing options) ─────────────────
+tmux_get()  { tmux show-options -t "$1" -v "$2" 2>/dev/null || true; }
+tmux_set()  { tmux set-option  -t "$1"    "$2" "$3" >/dev/null 2>&1 || true; }
+tmux_unset(){ tmux set-option  -t "$1" -u "$2"      >/dev/null 2>&1 || true; }
+tmux_get_pane()   { tmux show-options -t "$1" -p -v "$2" 2>/dev/null || true; }
+tmux_set_pane()   { tmux set-option  -t "$1" -p    "$2" "$3" >/dev/null 2>&1 || true; }
+tmux_unset_pane() { tmux set-option  -t "$1" -p -u "$2"      >/dev/null 2>&1 || true; }
+
+# Resolve the tmux session id for a given target (pane id or session). Falls
+# back to the currently-attached session when no target is supplied.
+_session_of() {
+  local target="${1:-}"
+  if [ -n "$target" ]; then
+    tmux display-message -p -t "$target" '#{session_id}' 2>/dev/null
+  else
+    tmux display-message -p '#{session_id}' 2>/dev/null
+  fi
+}
+
+_tmux_pid() { tmux display-message -p '#{pid}' 2>/dev/null; }
+
+# ─── platform-aware load sampling (hides Linux/macOS diff) ───────────
+_ncpu() {
+  case "$(uname)" in
+    Darwin) sysctl -n hw.ncpu 2>/dev/null || echo 1 ;;
+    *)      command -v nproc >/dev/null 2>&1 && nproc 2>/dev/null || echo 1 ;;
+  esac
+}
+
+# Walk a process tree, emitting every descendant pid (including the root).
+# Uses pgrep -P which is available on both Linux and macOS.
+_descendants() {
+  local pid="$1" child
+  [ -n "$pid" ] || return 0
+  printf '%s\n' "$pid"
+  for child in $(pgrep -P "$pid" 2>/dev/null); do
+    _descendants "$child"
+  done
+}
+
+# Echoes "cpu_share mem_share" where each is normalised to [0.0, 1.0].
+# cpu_share is summed across the whole process tree, divided by ncpu*100.
+# Both ps implementations (BSD/macOS, procps/Linux) accept "%cpu=,%mem="
+# to suppress headers, so the same call works on both.
+_vbox_pane_load() {
+  local pane_pid="$1"
+  if [ -z "$pane_pid" ]; then
+    echo "0 0"
+    return
+  fi
+  local pids ncpu
+  pids="$(_descendants "$pane_pid" | tr '\n' ' ')"
+  if [ -z "${pids// /}" ]; then
+    echo "0 0"
+    return
+  fi
+  ncpu="$(_ncpu)"
+  # shellcheck disable=SC2086  # intentional word splitting on pids
+  ps -o %cpu=,%mem= -p $pids 2>/dev/null \
+    | awk -v ncpu="$ncpu" 'BEGIN{c=0;m=0}
+        {c+=$1; m+=$2}
+        END{
+          cs = c/(ncpu*100); if (cs<0) cs=0; if (cs>1) cs=1
+          ms = m/100;        if (ms<0) ms=0; if (ms>1) ms=1
+          printf "%.4f %.4f\n", cs, ms
+        }'
+}
+
+# ─── stations.conf parsing ───────────────────────────────────────────
+# Format: <min> <max> <url> <label words...>
+# Returns "url<TAB>label" for the first range that matches.
+_intensity_to_station() {
+  local intensity="$1"
+  [ -f "$STATIONS_CONF" ] || return 0
+  awk -v t="$intensity" '
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    {
+      lo=$1; hi=$2; url=$3
+      label=""
+      for (i=4; i<=NF; i++) label = label (i==4?"":" ") $i
+      if (t+0 >= lo+0 && t+0 <= hi+0) {
+        printf "%s\t%s\n", url, label
+        exit
+      }
+    }
+  ' "$STATIONS_CONF"
+}
+
+_intensity_tier() {
+  awk -v i="${1:-0}" 'BEGIN{
+    if (i+0 < 0.3)      print "chill"
+    else if (i+0 < 0.6) print "mellow"
+    else                print "intense"
+  }'
+}
+
+# ─── mpv lifecycle (start / stop) ────────────────────────────────────
+_spawn_mpv() {
+  local sock="$1"
+  # `setsid` would put mpv in its own session and detach from controlling
+  # tty, which is what we want; but it doesn't exist on macOS. Settle for
+  # nohup + redirect, which is portable.
+  nohup mpv --idle=yes --no-terminal --no-video --no-config \
+            --really-quiet --keep-open=no \
+            --input-ipc-server="$sock" --volume=0 \
+       </dev/null >/dev/null 2>>"$VBOX_LOG" &
+  echo $!
+}
+
+_wait_for_socket() {
+  local sock="$1" tries="${2:-30}"
+  while [ "$tries" -gt 0 ]; do
+    [ -S "$sock" ] && return 0
+    sleep 0.1
+    tries=$((tries - 1))
+  done
+  return 1
+}
+
+cmd_start() {
+  if ! command -v mpv >/dev/null 2>&1 || ! command -v socat >/dev/null 2>&1; then
+    log "start: mpv/socat not installed; skipping"
+    return 0
+  fi
+  local sess
+  sess="$(_session_of)"
+  [ -n "$sess" ] || { log "start: no tmux session"; return 1; }
+
+  # already running for this session? bail out.
+  local existing_a existing_b
+  existing_a="$(tmux_get "$sess" "@vibe-mpv-a-pid")"
+  existing_b="$(tmux_get "$sess" "@vibe-mpv-b-pid")"
+  if [ -n "$existing_a" ] && kill -0 "$existing_a" 2>/dev/null \
+     && [ -n "$existing_b" ] && kill -0 "$existing_b" 2>/dev/null; then
+    log "start: already running (pids $existing_a, $existing_b)"
+    return 0
+  fi
+  cmd_stop  # clear any stale state
+
+  local sess_clean sock_dir sock_a sock_b pid_a pid_b
+  sess_clean="${sess#\$}"
+  sock_dir="${VBOX_RUNTIME_DIR}/sess-${sess_clean}"
+  mkdir -p "$sock_dir"
+  sock_a="${sock_dir}/a.sock"
+  sock_b="${sock_dir}/b.sock"
+  rm -f "$sock_a" "$sock_b"
+
+  pid_a="$(_spawn_mpv "$sock_a")"
+  pid_b="$(_spawn_mpv "$sock_b")"
+
+  if ! _wait_for_socket "$sock_a" || ! _wait_for_socket "$sock_b"; then
+    log "start: mpv slot failed to open socket"
+    kill "$pid_a" "$pid_b" 2>/dev/null || true
+    return 1
+  fi
+
+  tmux_set "$sess" "@vibe-mpv-a-sock" "$sock_a"
+  tmux_set "$sess" "@vibe-mpv-b-sock" "$sock_b"
+  tmux_set "$sess" "@vibe-mpv-a-pid"  "$pid_a"
+  tmux_set "$sess" "@vibe-mpv-b-pid"  "$pid_b"
+  tmux_set "$sess" "@vibe-active-slot" "A"
+  tmux_set "$sess" "@vibe-muted" "0"
+
+  # Kill our mpv processes when the session goes away. The PIDs are baked
+  # into the hook command at registration time, so the hook still works
+  # even if user options have already been torn down.
+  tmux set-hook -t "$sess" session-closed \
+    "run-shell -b \"kill $pid_a $pid_b 2>/dev/null; rm -rf '$sock_dir' 2>/dev/null\"" \
+    >/dev/null 2>&1 || true
+
+  log "start: spawned mpv pair (A=$pid_a B=$pid_b) for session $sess"
+}
+
+cmd_stop() {
+  local sess
+  sess="$(_session_of)"
+  [ -n "$sess" ] || return 0
+  local slot pid sock
+  for slot in a b; do
+    pid="$(tmux_get  "$sess" "@vibe-mpv-${slot}-pid")"
+    sock="$(tmux_get "$sess" "@vibe-mpv-${slot}-sock")"
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null || true
+      sleep 0.1
+      kill -9 "$pid" 2>/dev/null || true
+    fi
+    [ -n "$sock" ] && rm -f "$sock"
+    tmux_unset "$sess" "@vibe-mpv-${slot}-pid"
+    tmux_unset "$sess" "@vibe-mpv-${slot}-sock"
+  done
+  tmux_unset "$sess" "@vibe-active-slot"
+  tmux_unset "$sess" "@vibe-current-pane"
+  tmux_unset "$sess" "@vibe-muted"
+  log "stop: torn down mpv slots for session $sess"
+}
+
+# ─── crossfade ───────────────────────────────────────────────────────
+# Equal-power curve: out=cos(t·π/2), in=sin(t·π/2). 30 steps × 100ms ≈ 3s.
+# A `mkdir` lock gives us atomic "no-op on overlap" without depending on
+# flock (not present on macOS by default).
+cmd_crossfade() {
+  local target_url="${1:-}"
+  [ -n "$target_url" ] || { log "crossfade: no url"; return 0; }
+
+  local sess
+  sess="$(_session_of)"
+  [ -n "$sess" ] || return 0
+  local active_slot
+  active_slot="$(tmux_get "$sess" "@vibe-active-slot")"
+  [ -n "$active_slot" ] || { log "crossfade: no active slot"; return 0; }
+
+  local muted
+  muted="$(tmux_get "$sess" "@vibe-muted")"
+
+  # atomic lock — overlapping crossfades no-op rather than queue
+  local lock_dir="/tmp/vbox-crossfade-$(_tmux_pid).lock"
+  if ! mkdir "$lock_dir" 2>/dev/null; then
+    log "crossfade: skipped (lock held)"
+    return 0
+  fi
+  trap 'rmdir "$lock_dir" 2>/dev/null; trap - EXIT' EXIT
+
+  local from_slot to_slot from_sock to_sock
+  if [ "$active_slot" = "A" ]; then
+    from_slot=A; to_slot=B
+  else
+    from_slot=B; to_slot=A
+  fi
+  from_sock="$(tmux_get "$sess" "@vibe-mpv-$(echo "$from_slot" | tr 'A-Z' 'a-z')-sock")"
+  to_sock="$(tmux_get   "$sess" "@vibe-mpv-$(echo "$to_slot"   | tr 'A-Z' 'a-z')-sock")"
+
+  if [ -z "$from_sock" ] || [ -z "$to_sock" ]; then
+    log "crossfade: missing sockets"
+    rmdir "$lock_dir" 2>/dev/null
+    trap - EXIT
+    return 0
+  fi
+
+  # load target on the inactive slot at zero volume
+  "$IPC_HELPER" "$to_sock" set_property volume 0
+  "$IPC_HELPER" "$to_sock" loadfile "$target_url" replace
+
+  # if muted, just swap silently — no audible fade
+  if [ "$muted" = "1" ]; then
+    "$IPC_HELPER" "$from_sock" stop
+    tmux_set "$sess" "@vibe-active-slot" "$to_slot"
+    log "crossfade: silent swap → $target_url (muted)"
+    rmdir "$lock_dir" 2>/dev/null
+    trap - EXIT
+    return 0
+  fi
+
+  local steps=30 i out_v in_v
+  for ((i = 1; i <= steps; i++)); do
+    # equal-power curve, computed in awk because bash has no trig
+    read -r out_v in_v <<<"$(awk -v t="$i" -v n="$steps" 'BEGIN{
+      pi=3.141592653589793
+      a = (t/n) * (pi/2)
+      printf "%.2f %.2f", cos(a)*100, sin(a)*100
+    }')"
+    "$IPC_HELPER" "$from_sock" set_property volume "$out_v"
+    "$IPC_HELPER" "$to_sock"   set_property volume "$in_v"
+    sleep 0.1
+  done
+
+  # snap to final state in case any step was lost
+  "$IPC_HELPER" "$from_sock" set_property volume 0
+  "$IPC_HELPER" "$to_sock"   set_property volume 100
+  # silence the now-inactive slot to free network bandwidth
+  "$IPC_HELPER" "$from_sock" stop
+
+  tmux_set "$sess" "@vibe-active-slot" "$to_slot"
+  log "crossfade: $from_slot→$to_slot $target_url"
+
+  rmdir "$lock_dir" 2>/dev/null
+  trap - EXIT
+}
+
+# ─── per-pane intensity refresh ──────────────────────────────────────
+# Re-derives intensity from state + load, applies any active manual bump,
+# updates @vibe-station, and triggers a crossfade if the focused pane's
+# station just changed.
+_refresh_pane_intensity() {
+  local pane="$1"
+  [ -n "$pane" ] || return 0
+
+  local state intensity
+  state="$(tmux_get_pane "$pane" "@vibe-state")"
+  state="${state:-idle}"
+
+  # expire stale manual bumps
+  local bump_until bump_offset now
+  bump_until="$(tmux_get_pane "$pane" "@vibe-bump-until")"
+  bump_offset="$(tmux_get_pane "$pane" "@vibe-bump-offset")"
+  now="$(date +%s)"
+  if [ -n "$bump_until" ] && [ "$now" -ge "$bump_until" ]; then
+    tmux_unset_pane "$pane" "@vibe-bump-until"
+    tmux_unset_pane "$pane" "@vibe-bump-offset"
+    bump_offset=""
+  fi
+
+  if [ "$state" = "idle" ]; then
+    intensity="0.000"
+  else
+    local pane_pid cpu_share mem_share
+    pane_pid="$(tmux display-message -p -t "$pane" '#{pane_pid}' 2>/dev/null)"
+    read -r cpu_share mem_share <<<"$(_vbox_pane_load "$pane_pid")"
+    intensity="$(awk -v c="${cpu_share:-0}" -v m="${mem_share:-0}" 'BEGIN{
+      x = 0.2 + c + 0.5*m
+      if (x<0) x=0; if (x>1) x=1
+      printf "%.3f", x
+    }')"
+  fi
+
+  if [ -n "$bump_offset" ]; then
+    intensity="$(awk -v i="$intensity" -v o="$bump_offset" 'BEGIN{
+      x = i + o
+      if (x<0) x=0; if (x>1) x=1
+      printf "%.3f", x
+    }')"
+  fi
+
+  tmux_set_pane "$pane" "@vibe-intensity" "$intensity"
+
+  local url prev_url
+  url="$(_intensity_to_station "$intensity" | awk -F '\t' '{print $1}')"
+  [ -z "$url" ] && return 0
+  prev_url="$(tmux_get_pane "$pane" "@vibe-station")"
+  tmux_set_pane "$pane" "@vibe-station" "$url"
+
+  # if this is the currently-focused pane and the station shifted, crossfade
+  local sess current_pane
+  sess="$(_session_of "$pane")"
+  current_pane="$(tmux_get "$sess" "@vibe-current-pane")"
+  if [ "$current_pane" = "$pane" ] && [ "$url" != "$prev_url" ]; then
+    cmd_crossfade "$url" >/dev/null 2>&1 &
+  fi
+}
+
+# ─── dispatchers called from hooks ───────────────────────────────────
+cmd_focus() {
+  local pane="${1:-}"
+  [ -n "$pane" ] || return 0
+  local sess active_slot
+  sess="$(_session_of "$pane")"
+  [ -n "$sess" ] || return 0
+  active_slot="$(tmux_get "$sess" "@vibe-active-slot")"
+  [ -n "$active_slot" ] || return 0  # vibe not active for this session
+
+  tmux_set "$sess" "@vibe-current-pane" "$pane"
+  _refresh_pane_intensity "$pane"
+
+  local url
+  url="$(tmux_get_pane "$pane" "@vibe-station")"
+  [ -n "$url" ] || return 0
+  cmd_crossfade "$url"
+}
+
+cmd_set_state() {
+  local pane="${1:-}" state="${2:-}"
+  [ -n "$pane" ] && [ -n "$state" ] || return 0
+  case "$state" in idle|running|thinking) ;; *) return 0 ;; esac
+  tmux_set_pane "$pane" "@vibe-state" "$state"
+  _refresh_pane_intensity "$pane"
+}
+
+cmd_tick() {
+  local sess active_slot
+  sess="$(_session_of)" || return 0
+  [ -n "$sess" ] || return 0
+  active_slot="$(tmux_get "$sess" "@vibe-active-slot")"
+  [ -n "$active_slot" ] || return 0  # render nothing in non-vibe sessions
+
+  local muted
+  muted="$(tmux_get "$sess" "@vibe-muted")"
+  if [ "$muted" = "1" ]; then
+    printf '🔇 muted'
+    return 0
+  fi
+
+  # network-unreachable / mpv-died sentinel: if the active slot's pid is gone,
+  # render the offline indicator instead of pretending to play
+  local active_pid
+  active_pid="$(tmux_get "$sess" "@vibe-mpv-$(echo "$active_slot" | tr 'A-Z' 'a-z')-pid")"
+  if [ -n "$active_pid" ] && ! kill -0 "$active_pid" 2>/dev/null; then
+    printf '🔇 offline'
+    return 0
+  fi
+
+  local pane
+  pane="$(tmux_get "$sess" "@vibe-current-pane")"
+  [ -n "$pane" ] || pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null)"
+  _refresh_pane_intensity "$pane"
+
+  local intensity tier
+  intensity="$(tmux_get_pane "$pane" "@vibe-intensity")"
+  intensity="${intensity:-0}"
+  tier="$(_intensity_tier "$intensity")"
+  case "$tier" in
+    intense) printf '🔥 intense' ;;
+    mellow)  printf '🎷 mellow'  ;;
+    *)       printf '🌿 chill'   ;;
+  esac
+}
+
+cmd_mute() {
+  local sess muted
+  sess="$(_session_of)"
+  [ -n "$sess" ] || return 0
+  muted="$(tmux_get "$sess" "@vibe-muted")"
+  local active_slot active_sock
+  active_slot="$(tmux_get "$sess" "@vibe-active-slot")"
+  [ -n "$active_slot" ] || return 0
+  active_sock="$(tmux_get "$sess" "@vibe-mpv-$(echo "$active_slot" | tr 'A-Z' 'a-z')-sock")"
+
+  if [ "$muted" = "1" ]; then
+    tmux_set "$sess" "@vibe-muted" "0"
+    # fade back up
+    local i
+    for ((i = 1; i <= 15; i++)); do
+      "$IPC_HELPER" "$active_sock" set_property volume "$(awk -v i="$i" 'BEGIN{printf "%.2f", i*100/15}')"
+      sleep 0.05
+    done
+    "$IPC_HELPER" "$active_sock" set_property volume 100
+  else
+    tmux_set "$sess" "@vibe-muted" "1"
+    local i
+    for ((i = 14; i >= 0; i--)); do
+      "$IPC_HELPER" "$active_sock" set_property volume "$(awk -v i="$i" 'BEGIN{printf "%.2f", i*100/15}')"
+      sleep 0.05
+    done
+    "$IPC_HELPER" "$active_sock" set_property volume 0
+  fi
+}
+
+cmd_bump() {
+  local delta="${1:-0}"
+  local sess pane bump_until bump_offset now
+  sess="$(_session_of)"
+  pane="$(tmux_get "$sess" "@vibe-current-pane")"
+  [ -n "$pane" ] || pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null)"
+  [ -n "$pane" ] || return 0
+  now="$(date +%s)"
+  bump_offset="$(tmux_get_pane "$pane" "@vibe-bump-offset")"
+  bump_offset="$(awk -v cur="${bump_offset:-0}" -v d="$delta" 'BEGIN{
+    x = cur + d
+    if (x < -0.5) x = -0.5
+    if (x >  0.5) x =  0.5
+    printf "%.2f", x
+  }')"
+  bump_until=$((now + 60))
+  tmux_set_pane "$pane" "@vibe-bump-offset" "$bump_offset"
+  tmux_set_pane "$pane" "@vibe-bump-until"  "$bump_until"
+  _refresh_pane_intensity "$pane"
+}
+
+# ─── main ────────────────────────────────────────────────────────────
+usage() {
+  cat <<'USAGE'
+Usage: vbox-music <command> [args...]
+
+  start                 spawn mpv slot pair for the current session
+  stop                  kill mpv slot pair for the current session
+  crossfade <url>       crossfade active slot → inactive slot playing <url>
+  focus <pane_id>       called by tmux pane-focus-in hook
+  set-state <p> <s>     s ∈ {idle,running,thinking}
+  tick                  recompute focused pane intensity → station; emits emoji
+  mute                  toggle global mute
+  bump <delta>          shift intensity by <delta> for 60s (e.g. +0.25)
+USAGE
+}
+
+cmd="${1:-}"
+shift || true
+case "$cmd" in
+  start)     cmd_start "$@" ;;
+  stop|kill) cmd_stop  "$@" ;;
+  crossfade) cmd_crossfade "$@" ;;
+  focus)     cmd_focus "$@" ;;
+  set-state) cmd_set_state "$@" ;;
+  tick)      cmd_tick  "$@" ;;
+  mute)      cmd_mute  "$@" ;;
+  bump)      cmd_bump  "$@" ;;
+  -h|--help|help|"") usage ;;
+  *) usage; exit 1 ;;
+esac
