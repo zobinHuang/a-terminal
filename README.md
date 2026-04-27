@@ -11,7 +11,6 @@ curl -fsSL -H 'Accept: application/vnd.github.v3.raw' https://api.github.com/rep
 ## What it installs
 
 - **tmux** — session, tab, and pane management (with zellij-style keybindings)
-- **Yazi** — terminal file manager
 - **Claude Code** — AI coding assistant
 - **vbox** — command to manage tmux sessions
 - **Vibe music** *(opt-in)* — ambient internet radio that reacts to each pane's activity
@@ -53,13 +52,6 @@ vbox exit                  # Kill current session
 | Key | Action |
 |---|---|
 | `h/j/k/l` or arrows | Resize pane (repeatable) |
-
-### Yazi (file manager)
-
-| Key | Action |
-|---|---|
-| `cr` | Copy relative path to clipboard |
-| `s` | Search file contents |
 
 Sessions are named `<username>-<name>`. Re-running the install script is safe — it always updates configs to the latest version.
 
