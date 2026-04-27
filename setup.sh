@@ -53,6 +53,23 @@ vbox_fetch() {
     "${VBOX_REPO_API}/${src}" -o "$dest" 2>/dev/null
 }
 
+# When running `bash setup.sh` from a clone, prefer the local file. When
+# running via `curl|bash`, BASH_SOURCE points to /dev/fd/N or main and the
+# sibling check fails, so we fall back to fetching from GitHub.
+VBOX_SCRIPT_DIR=""
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+  VBOX_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+fi
+vbox_install_file() {
+  # vbox_install_file <repo-path> <dest>
+  local src="$1" dest="$2"
+  if [ -n "$VBOX_SCRIPT_DIR" ] && [ -f "$VBOX_SCRIPT_DIR/$src" ]; then
+    cp "$VBOX_SCRIPT_DIR/$src" "$dest"
+  else
+    vbox_fetch "$src" "$dest" || return 1
+  fi
+}
+
 # ──────────────────────────────────────────────────────────────────────
 COMMIT_HASH="$(curl -fsSL https://api.github.com/repos/zobinHuang/vibebox/commits/main 2>/dev/null | grep -m1 '"sha"' | cut -d'"' -f4 | cut -c1-7)" || true
 COMMIT_HASH="${COMMIT_HASH:-unknown}"
@@ -260,8 +277,9 @@ set -g status-position bottom
 set -g status-style "bg=#1e1e2e,fg=#cdd6f4"
 set -g status-left-length 45
 set -g status-left "#[bg=#cba6f7,fg=#1e1e2e,bold] VibeBox #[default] #[bg=#89b4fa,fg=#1e1e2e,bold] ◆ #S #[default] "
-set -g status-right-length 65
-set -g status-right "#[fg=#a6e3a1]running #(NOW=$(date +%%s); C=#{session_created}; E=$((NOW-C)); D=$((E/86400)); H=$(((E%%86400)/3600)); M=$(((E%%3600)/60)); S=$((E%%60)); [ $D -gt 0 ] && printf '%%dd %%dh %%dm' $D $H $M || { [ $H -gt 0 ] && printf '%%dh %%dm %%ds' $H $M $S || printf '%%dm %%ds' $M $S; }) #[fg=#a6adc8]│ %Y-%m-%d %H:%M "
+set -g status-right-length 80
+# #{@vibe-status-segment} is empty by default; populated when tmux-vibe.conf is sourced.
+set -g status-right "#{@vibe-status-segment}#[fg=#a6e3a1]running #(NOW=$(date +%%s); C=#{session_created}; E=$((NOW-C)); D=$((E/86400)); H=$(((E%%86400)/3600)); M=$(((E%%3600)/60)); S=$((E%%60)); [ $D -gt 0 ] && printf '%%dd %%dh %%dm' $D $H $M || { [ $H -gt 0 ] && printf '%%dh %%dm %%ds' $H $M $S || printf '%%dm %%ds' $M $S; }) #[fg=#a6adc8]│ %Y-%m-%d %H:%M "
 set -g status-interval 1
 setw -g window-status-format "#[fg=#a6adc8] #I:#W "
 setw -g window-status-current-format "#[bg=#45475a,fg=#89b4fa,bold] ▸ #I:#W "
@@ -270,6 +288,9 @@ setw -g window-status-separator ""
 # ─── pane borders ────────────────────────────────────────────────────
 set -g pane-border-style "fg=#45475a"
 set -g pane-active-border-style "fg=#89b4fa"
+
+# ─── vibe music (sourced if installed; silently skipped otherwise) ──
+source-file -q ~/.config/vibebox/tmux-vibe.conf
 TMUX
 info "Patched .tmux.conf (tabs, panes, Alt keybindings, status bar)"
 
@@ -310,6 +331,40 @@ else
     info "Claude Code installed"
   else
     err "Claude Code installation failed — install manually: https://claude.ai/install"
+  fi
+fi
+
+# ─── 3b. vbox-music (vibe music engine) ─────────────────────────────
+echo ""
+echo "── vbox-music (vibe music) ───────────────────────"
+
+VBOX_CFG_DIR="$HOME/.config/vibebox"
+mkdir -p "$VBOX_CFG_DIR" "$HOME/.local/bin" "$HOME/.cache/vibebox"
+
+# bin scripts — always overwrite so re-running setup.sh upgrades them
+if vbox_install_file bin/vbox-music     "$HOME/.local/bin/vbox-music" \
+   && vbox_install_file bin/vbox-mpv-ipc "$HOME/.local/bin/vbox-mpv-ipc"; then
+  chmod +x "$HOME/.local/bin/vbox-music" "$HOME/.local/bin/vbox-mpv-ipc"
+  info "Installed vbox-music + vbox-mpv-ipc"
+else
+  err "Failed to install vbox-music scripts"
+fi
+
+# tmux-vibe.conf — always overwrite (sourced by main .tmux.conf)
+if vbox_install_file config/tmux-vibe.conf "$VBOX_CFG_DIR/tmux-vibe.conf"; then
+  info "Installed tmux-vibe.conf"
+else
+  err "Failed to install tmux-vibe.conf"
+fi
+
+# stations.conf — preserve user customizations on re-install
+if [ -f "$VBOX_CFG_DIR/stations.conf" ]; then
+  info "stations.conf already exists (preserving user edits)"
+else
+  if vbox_install_file config/stations.conf "$VBOX_CFG_DIR/stations.conf"; then
+    info "Installed default stations.conf"
+  else
+    err "Failed to install stations.conf"
   fi
 fi
 
