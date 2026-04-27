@@ -13,7 +13,14 @@
 
 set -u
 
-created=$(tmux display-message -p '#{session_created}' 2>/dev/null)
+# Prefer the per-window timestamp written by the after-new-window /
+# after-new-session hooks; fall back to the session's creation time for
+# windows that pre-date the hook (e.g., the user's tmux server was
+# already running when vibebox was upgraded).
+created=$(tmux display-message -p '#{@vibe-window-created}' 2>/dev/null)
+case "$created" in
+  ''|*[!0-9]*) created=$(tmux display-message -p '#{session_created}' 2>/dev/null) ;;
+esac
 case "$created" in
   ''|*[!0-9]*) printf '?'; exit 0 ;;
 esac

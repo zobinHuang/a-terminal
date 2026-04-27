@@ -94,11 +94,13 @@ That adds a single `source ~/.config/vibebox/shell-hooks.sh` line to your `~/.ba
 |---|---|
 | `m` | Toggle global mute (fade current slot to 0 / restore) |
 | `M` | Kill mpv processes for this session (re-enable with `vbox new --vibe`) |
-| `]` | Cycle mood **up** (auto → chill → mellow → intense → auto) — sticky |
-| `[` | Cycle mood **down** (auto → intense → mellow → chill → auto) — sticky |
-| `a` | Release manual mood, return to auto |
+| `]` | Cycle mood **up** (auto → chill → mellow → intense → auto) — sticky, per tab |
+| `[` | Cycle mood **down** (auto → intense → mellow → chill → auto) — sticky, per tab |
+| `a` | Release manual mood for this tab, return to auto |
 
-A 🔒 next to the tier label means the mood is pinned manually (use `Ctrl+t a` to release).
+A 🔒 next to the tier label means the mood is pinned manually for the current tab (use `Ctrl+t a` to release). Each tab carries its own mood, so locking "intense" on tab 1 doesn't affect tab 2.
+
+The `running …` counter is also per-tab — it resets when you create a new tab and shows uptime since that tab opened, not the session.
 
 ### Status bar
 

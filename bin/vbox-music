@@ -44,6 +44,11 @@ tmux_unset(){ tmux set-option  -t "$1" -u "$2"      >/dev/null 2>&1 || true; }
 tmux_get_pane()   { tmux show-options -t "$1" -p -v "$2" 2>/dev/null || true; }
 tmux_set_pane()   { tmux set-option  -t "$1" -p    "$2" "$3" >/dev/null 2>&1 || true; }
 tmux_unset_pane() { tmux set-option  -t "$1" -p -u "$2"      >/dev/null 2>&1 || true; }
+# window-scoped (-w). The target can be a pane id and tmux resolves to
+# its window automatically.
+tmux_get_win()    { tmux show-options -t "$1" -w -v "$2" 2>/dev/null || true; }
+tmux_set_win()    { tmux set-option  -t "$1" -w    "$2" "$3" >/dev/null 2>&1 || true; }
+tmux_unset_win()  { tmux set-option  -t "$1" -w -u "$2"      >/dev/null 2>&1 || true; }
 
 # Resolve the tmux session id for a given target (pane id or session). Falls
 # back to the currently-attached session when no target is supplied.
@@ -160,22 +165,22 @@ _now_playing() {
 }
 
 # Scrolling marquee: pads with a separator so the loop wraps cleanly,
-# advances one char per call. Position lives in @vibe-marquee-pos so
-# parallel tick calls in different sessions don't fight.
+# advances one char per call. Position is window-scoped so each tab
+# scrolls its track independently and switching tabs doesn't reset the
+# scroll of the tab you came from.
 _marquee() {
-  local sess="$1" text="$2" width="${3:-26}" pos pad len doubled
+  local target="$1" text="$2" width="${3:-26}" pos pad len doubled
   [ -n "$text" ] || text="—"
   pad="$text   ✦   "
   len=${#pad}
   if [ "$len" -le "$width" ]; then
-    # short enough that scrolling looks dumb — just left-pad and stop
     printf '%-*s' "$width" "$text"
     return 0
   fi
-  pos="$(tmux_get "$sess" "@vibe-marquee-pos")"
+  pos="$(tmux_get_win "$target" "@vibe-marquee-pos")"
   pos="${pos:-0}"
   pos=$(( (pos + 1) % len ))
-  tmux_set "$sess" "@vibe-marquee-pos" "$pos"
+  tmux_set_win "$target" "@vibe-marquee-pos" "$pos"
   doubled="${pad}${pad}"
   printf '%s' "${doubled:$pos:$width}"
 }
@@ -259,6 +264,18 @@ cmd_start() {
   tmux_set "$sess" "@vibe-mpv-b-pid"  "$pid_b"
   tmux_set "$sess" "@vibe-active-slot" "A"
   tmux_set "$sess" "@vibe-muted" "0"
+
+  # Stamp creation time on every window in this session that doesn't
+  # already have one — covers the initial window of a brand-new session
+  # (after-new-session may not fire reliably on older tmux) and any
+  # windows that pre-date the upgrade on a long-lived tmux server.
+  local now_ts win
+  now_ts="$(date +%s)"
+  while read -r win; do
+    [ -n "$win" ] || continue
+    [ -z "$(tmux_get_win "$win" "@vibe-window-created")" ] || continue
+    tmux_set_win "$win" "@vibe-window-created" "$now_ts"
+  done < <(tmux list-windows -t "$sess" -F '#{window_id}' 2>/dev/null)
 
   # Status-right inherits the main config's status-interval (1s) — that
   # gives the song marquee a smoother 1-char-per-second scroll and the
@@ -473,7 +490,8 @@ _refresh_pane_intensity() {
 
   local sess override forced_intensity
   sess="$(_session_of "$pane")"
-  override="$(tmux_get "$sess" "@vibe-mood-override")"
+  # mood is now per-window: each tab carries its own override
+  override="$(tmux_get_win "$pane" "@vibe-mood-override")"
   forced_intensity="$(_tier_to_intensity "$override")"
 
   local state intensity
@@ -599,7 +617,7 @@ cmd_tick() {
   intensity="$(tmux_get_pane "$pane" "@vibe-intensity")"
   intensity="${intensity:-0}"
   tier="$(_intensity_tier "$intensity")"
-  override="$(tmux_get "$sess" "@vibe-mood-override")"
+  override="$(tmux_get_win "$pane" "@vibe-mood-override")"
   case "$tier" in
     intense) emoji_label='🔥 cooking'  ;;
     mellow)  emoji_label='🎷 grooving' ;;
@@ -612,7 +630,8 @@ cmd_tick() {
   local station song marquee out
   station="$(tmux_get_pane "$pane" "@vibe-station-label")"
   song="$(_now_playing "$active_sock")"
-  marquee="$(_marquee "$sess" "$song" 26)"
+  # marquee position is per-window so each tab keeps its own scroll
+  marquee="$(_marquee "$pane" "$song" 26)"
 
   if [ -n "$station" ]; then
     out="${emoji_label} · ${station} ♫ ${marquee}"
@@ -694,7 +713,8 @@ cmd_bump() {
   _refresh_pane_intensity "$pane"
 }
 
-# Manual mood — sticky session-scoped override of the auto-derived tier.
+# Manual mood — sticky window-scoped override of the auto-derived tier.
+# Each tab carries its own mood; switching tabs swaps in that tab's mood.
 # Args: chill | mellow | intense | auto | next | prev
 cmd_mood() {
   local arg="${1:-next}" sess pane cur next
@@ -702,15 +722,16 @@ cmd_mood() {
   [ -n "$sess" ] || return 0
   pane="$(tmux_get "$sess" "@vibe-current-pane")"
   [ -n "$pane" ] || pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null)"
+  [ -n "$pane" ] || return 0
 
-  cur="$(tmux_get "$sess" "@vibe-mood-override")"
+  cur="$(tmux_get_win "$pane" "@vibe-mood-override")"
 
   case "$arg" in
     auto|off|"")
-      tmux_unset "$sess" "@vibe-mood-override"
+      tmux_unset_win "$pane" "@vibe-mood-override"
       ;;
     chill|mellow|intense)
-      tmux_set "$sess" "@vibe-mood-override" "$arg"
+      tmux_set_win "$pane" "@vibe-mood-override" "$arg"
       ;;
     next)
       case "${cur:-auto}" in
@@ -720,9 +741,9 @@ cmd_mood() {
         intense) next="auto" ;;
       esac
       if [ "$next" = "auto" ]; then
-        tmux_unset "$sess" "@vibe-mood-override"
+        tmux_unset_win "$pane" "@vibe-mood-override"
       else
-        tmux_set "$sess" "@vibe-mood-override" "$next"
+        tmux_set_win "$pane" "@vibe-mood-override" "$next"
       fi
       ;;
     prev)
@@ -733,9 +754,9 @@ cmd_mood() {
         chill)   next="auto" ;;
       esac
       if [ "$next" = "auto" ]; then
-        tmux_unset "$sess" "@vibe-mood-override"
+        tmux_unset_win "$pane" "@vibe-mood-override"
       else
-        tmux_set "$sess" "@vibe-mood-override" "$next"
+        tmux_set_win "$pane" "@vibe-mood-override" "$next"
       fi
       ;;
     *)
@@ -743,7 +764,7 @@ cmd_mood() {
       return 1
       ;;
   esac
-  [ -n "$pane" ] && _refresh_pane_intensity "$pane"
+  _refresh_pane_intensity "$pane"
 }
 
 # ─── main ────────────────────────────────────────────────────────────
