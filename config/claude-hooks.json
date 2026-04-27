@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          { "type": "command", "command": "vbox-music set-state \"$TMUX_PANE\" thinking" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          { "type": "command", "command": "vbox-music set-state \"$TMUX_PANE\" idle" }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          { "type": "command", "command": "vbox-music set-state \"$TMUX_PANE\" idle" }
+        ]
+      }
+    ]
+  }
+}

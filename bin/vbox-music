@@ -399,6 +399,12 @@ cmd_set_state() {
   local pane="${1:-}" state="${2:-}"
   [ -n "$pane" ] && [ -n "$state" ] || return 0
   case "$state" in idle|running|thinking) ;; *) return 0 ;; esac
+  # short-circuit on non-vibe sessions so we don't pollute their options
+  local sess active_slot
+  sess="$(_session_of "$pane")"
+  [ -n "$sess" ] || return 0
+  active_slot="$(tmux_get "$sess" "@vibe-active-slot")"
+  [ -n "$active_slot" ] || return 0
   tmux_set_pane "$pane" "@vibe-state" "$state"
   _refresh_pane_intensity "$pane"
 }

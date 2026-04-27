@@ -60,6 +60,7 @@ VBOX_SCRIPT_DIR=""
 if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
   VBOX_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
 fi
+VBOX_CFG_DIR="$HOME/.config/vibebox"
 vbox_install_file() {
   # vbox_install_file <repo-path> <dest>
   local src="$1" dest="$2"
@@ -191,6 +192,18 @@ else
     info "socat installed"
   else
     warn "socat install failed — vibe music will be unavailable. Install manually: brew install socat  /  sudo apt install socat"
+  fi
+fi
+
+# jq (used to safely merge Claude Code hooks into ~/.claude/settings.json)
+if command -v jq &>/dev/null; then
+  info "jq already installed"
+else
+  warn "Installing jq …"
+  if install_native jq || install_pkg jq; then
+    info "jq installed"
+  else
+    warn "jq install failed — Claude Code hooks merge will be skipped. Install manually if you want vibe state from claude: brew install jq  /  sudo apt install jq"
   fi
 fi
 
@@ -334,11 +347,52 @@ else
   fi
 fi
 
+# ─── merge vbox-music hooks into ~/.claude/settings.json ─────────────
+# Idempotent: a "vbox-music set-state" string acts as the marker. Existing
+# user hooks under PreToolUse / Stop / SubagentStop are preserved by jq's
+# array-concat. If jq isn't available we leave settings.json alone and tell
+# the user how to add it manually.
+CLAUDE_DIR="$HOME/.claude"
+CLAUDE_SETTINGS="$CLAUDE_DIR/settings.json"
+mkdir -p "$CLAUDE_DIR"
+
+if [ -f "$CLAUDE_SETTINGS" ] && grep -q "vbox-music set-state" "$CLAUDE_SETTINGS" 2>/dev/null; then
+  info "Claude Code vibe hooks already merged"
+elif command -v jq &>/dev/null; then
+  CLAUDE_TMP="$(mktemp)"
+  if [ -f "$CLAUDE_SETTINGS" ]; then
+    cp "$CLAUDE_SETTINGS" "${CLAUDE_SETTINGS}.bak.$(date +%s)" 2>/dev/null || true
+    INPUT="$CLAUDE_SETTINGS"
+  else
+    printf '{}' > "$CLAUDE_TMP.in"
+    INPUT="$CLAUDE_TMP.in"
+  fi
+  if jq '
+    .hooks //= {} |
+    .hooks.PreToolUse   = ((.hooks.PreToolUse   // []) + [{matcher: ".*", hooks: [{type: "command", command: "vbox-music set-state \"$TMUX_PANE\" thinking"}]}]) |
+    .hooks.Stop         = ((.hooks.Stop         // []) + [{matcher: ".*", hooks: [{type: "command", command: "vbox-music set-state \"$TMUX_PANE\" idle"}]}]) |
+    .hooks.SubagentStop = ((.hooks.SubagentStop // []) + [{matcher: ".*", hooks: [{type: "command", command: "vbox-music set-state \"$TMUX_PANE\" idle"}]}])
+  ' "$INPUT" > "$CLAUDE_TMP" 2>/dev/null && [ -s "$CLAUDE_TMP" ]; then
+    mv "$CLAUDE_TMP" "$CLAUDE_SETTINGS"
+    rm -f "${CLAUDE_TMP}.in"
+    info "Merged vibe hooks into $CLAUDE_SETTINGS"
+  else
+    rm -f "$CLAUDE_TMP" "${CLAUDE_TMP}.in"
+    err "Failed to merge Claude Code hooks (jq error). Existing settings unchanged."
+  fi
+else
+  warn "jq not available — skipping Claude Code hooks merge."
+  warn "  To wire claude → vibe music manually, copy hooks from ~/.config/vibebox/claude-hooks.json"
+  warn "  into the \"hooks\" object of $CLAUDE_SETTINGS"
+fi
+
+# stash a copy of the snippet for users to inspect / merge by hand
+vbox_install_file config/claude-hooks.json "$VBOX_CFG_DIR/claude-hooks.json" 2>/dev/null || true
+
 # ─── 3b. vbox-music (vibe music engine) ─────────────────────────────
 echo ""
 echo "── vbox-music (vibe music) ───────────────────────"
 
-VBOX_CFG_DIR="$HOME/.config/vibebox"
 mkdir -p "$VBOX_CFG_DIR" "$HOME/.local/bin" "$HOME/.cache/vibebox"
 
 # bin scripts — always overwrite so re-running setup.sh upgrades them
