@@ -260,11 +260,10 @@ cmd_start() {
   tmux_set "$sess" "@vibe-active-slot" "A"
   tmux_set "$sess" "@vibe-muted" "0"
 
-  # Cap status-right re-render to every 2s for this session (spec). Other
-  # sessions keep the main config's faster rate. status-right itself calls
-  # `#(vbox-music tick)` directly (defined in main .tmux.conf), so no
-  # per-session segment plumbing needed here.
-  tmux set-option -t "$sess" status-interval 2 >/dev/null 2>&1 || true
+  # Status-right inherits the main config's status-interval (1s) — that
+  # gives the song marquee a smoother 1-char-per-second scroll and the
+  # uptime/clock fresh-each-second feel. Load sampling at 1s is fine for
+  # vbox-music tick (it's a few ms of work).
 
   # Kick off the chill station on slot A immediately. Skipping the
   # crossfade (nothing to fade from) means attach feels musical, not silent.
@@ -313,8 +312,6 @@ cmd_stop() {
   tmux_unset "$sess" "@vibe-active-slot"
   tmux_unset "$sess" "@vibe-current-pane"
   tmux_unset "$sess" "@vibe-muted"
-  # restore session status-interval to inherit the global default
-  tmux set-option -t "$sess" -u status-interval >/dev/null 2>&1 || true
   # remove stashed cleanup state
   sess_clean="${sess#\$}"
   rm -f "${VBOX_RUNTIME_DIR}/sess-${sess_clean}.state"
