@@ -18,13 +18,27 @@ _vbox_should_hook() {
 }
 
 if _vbox_should_hook; then
+  # When THIS shell exits and it's the last pane in its tmux session,
+  # the session is about to die. Reap mpv now in case the tmux server's
+  # session-closed hook isn't loaded (e.g., server pre-dates the install).
+  _vbox_exit_trap() {
+    local sess npanes
+    sess="$(tmux display-message -p '#{session_id}' 2>/dev/null)"
+    [ -n "$sess" ] || return 0
+    npanes="$(tmux list-panes -s -t "$sess" -F '#{pane_id}' 2>/dev/null | wc -l | tr -d ' ')"
+    if [ "${npanes:-0}" -le 1 ]; then
+      vbox-music stop "$sess" 2>/dev/null || true
+    fi
+  }
+
   if [ -n "${ZSH_VERSION:-}" ]; then
     _vbox_preexec() { vbox-music set-state "$TMUX_PANE" running 2>/dev/null; }
     _vbox_precmd()  { vbox-music set-state "$TMUX_PANE" idle    2>/dev/null; }
     # zsh chains its hooks via these arrays; appending preserves any user hooks.
-    typeset -ga preexec_functions precmd_functions
+    typeset -ga preexec_functions precmd_functions zshexit_functions
     preexec_functions+=(_vbox_preexec)
     precmd_functions+=(_vbox_precmd)
+    zshexit_functions+=(_vbox_exit_trap)
   elif [ -n "${BASH_VERSION:-}" ]; then
     _vbox_debug() {
       # skip tab-completion + the PROMPT_COMMAND chain itself
@@ -34,6 +48,9 @@ if _vbox_should_hook; then
     }
     _vbox_precmd() { vbox-music set-state "${TMUX_PANE:-}" idle 2>/dev/null; }
     trap '_vbox_debug' DEBUG
+    # bash EXIT trap fires for every shell exit including subshells; that's
+    # fine here because _vbox_exit_trap self-gates on "last pane in session".
+    trap '_vbox_exit_trap' EXIT
     # prepend so other hooks still run; preserves any pre-existing PROMPT_COMMAND
     if [ -z "${PROMPT_COMMAND:-}" ]; then
       PROMPT_COMMAND="_vbox_precmd"
