@@ -128,9 +128,9 @@ Default stations are SomaFM streams (free, listener-supported — donate at <htt
 Read top-to-bottom, first matching range wins. Anything `mpv` can play (HTTP/HTTPS, m3u, plain audio files, local paths) is fair game.
 
 ```
-0.0 0.3 https://ice2.somafm.com/groovesalad-128-mp3   Groove Salad
-0.3 0.6 https://ice2.somafm.com/indiepop-128-mp3      Indie Pop Rocks
-0.6 1.0 https://ice2.somafm.com/metal-128-mp3         Metal Detector
+0.0 0.3 https://ice2.somafm.com/groovesalad-128-mp3    Groove Salad
+0.3 0.6 https://ice2.somafm.com/missioncontrol-128-mp3 Mission Control
+0.6 1.0 https://ice2.somafm.com/metal-128-mp3          Metal Detector
 ```
 
 Re-running setup.sh preserves your edits.
