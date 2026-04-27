@@ -165,6 +165,20 @@ _now_playing() {
   done
 }
 
+# 5-cell volume bar: floor(vol/20) filled cells, rest as ░.
+#   0%   ░░░░░     50%  ██░░░     100% █████
+#   25%  █░░░░     75%  ███░░
+_volume_bar() {
+  local vol="${1:-100}" filled empty bar=""
+  filled=$(( vol / 20 ))
+  [ "$filled" -gt 5 ] && filled=5
+  [ "$filled" -lt 0 ] && filled=0
+  empty=$(( 5 - filled ))
+  while [ "$filled" -gt 0 ]; do bar="${bar}█"; filled=$((filled - 1)); done
+  while [ "$empty"  -gt 0 ]; do bar="${bar}░"; empty=$((empty - 1));   done
+  printf '%s' "$bar"
+}
+
 # Scrolling marquee: pads with a separator so the loop wraps cleanly,
 # advances one char per call. Position is window-scoped so each tab
 # scrolls its track independently and switching tabs doesn't reset the
@@ -795,12 +809,17 @@ cmd_tick() {
   local locked=""
   [ -n "$override" ] && locked=" [locked]"
 
+  local vol vol_bar
+  vol="$(tmux_get "$sess" "@vibe-volume")"
+  vol="${vol:-100}"
+  vol_bar="$(_volume_bar "$vol")"
+
   local song marquee
   song="$(_now_playing "$active_sock")"
   # marquee position is per-window so each tab keeps its own scroll
   marquee="$(_marquee "$pane" "$song" 26)"
 
-  printf '%s %s %s%s ♫ %s' "$level_glyph" "$level_label" "$intensity_2" "$locked" "$marquee"
+  printf '%s %s %s %s%s ♫ %s' "$level_glyph" "$level_label" "$intensity_2" "$vol_bar" "$locked" "$marquee"
 }
 
 cmd_sync_attached() {
