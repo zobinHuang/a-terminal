@@ -266,9 +266,10 @@ cmd_start() {
   tmux_set "$sess" "@vibe-muted" "0"
 
   # Wipe any stale crossfade locks. We just spawned mpv, so by definition
-  # no crossfade is in flight — any leftover lock dir is from a previous
-  # tmux server's run that crashed without firing its EXIT trap.
-  rm -rf /tmp/vbox-crossfade-*.lock 2>/dev/null || true
+  # no crossfade is in flight — any leftover lock from a previous tmux
+  # server's run is dead. (Both old `.lock` directories from earlier
+  # versions and current `.pid` files are wiped.)
+  rm -rf /tmp/vbox-crossfade-*.lock /tmp/vbox-crossfade-*.pid 2>/dev/null || true
 
   # Stamp creation time on every window in this session that doesn't
   # already have one — covers the initial window of a brand-new session
@@ -421,31 +422,26 @@ cmd_crossfade() {
   local muted
   muted="$(tmux_get "$sess" "@vibe-muted")"
 
-  # atomic lock — overlapping crossfades no-op rather than queue
-  local tpid
+  # PID-file lock. mkdir-based locking failed in this environment because
+  # the backgrounded crossfade subshell (spawned via `cmd_crossfade ... &`
+  # under `tmux run-shell -b`) gets SIGHUP'd when the parent exits before
+  # the EXIT trap can fire — the lock dir survives, every subsequent
+  # crossfade sees it as held forever, and audio never changes. A pidfile
+  # we can validate (kill -0) gives us a self-healing lock without
+  # depending on traps firing.
+  local tpid lock_file
   tpid="$(_tmux_pid)"
-  : "${tpid:=$$}"  # fallback so we still get a unique-enough lock path
-  local lock_dir="/tmp/vbox-crossfade-${tpid}.lock"
-  # Auto-heal a stale lock: a crossfade that's been "in progress" for
-  # more than 5s (when the max fade is ~3s) is dead — its owner crashed,
-  # got SIGKILLed, or the trap didn't fire for some reason. Without this,
-  # ONE leaked lock silently disables every future crossfade for the
-  # life of the tmux server.
-  if [ -d "$lock_dir" ]; then
-    local now_t lock_mt age
-    now_t="$(date +%s)"
-    lock_mt="$(stat -f %m "$lock_dir" 2>/dev/null || stat -c %Y "$lock_dir" 2>/dev/null || echo "$now_t")"
-    age=$(( now_t - lock_mt ))
-    if [ "$age" -gt 5 ]; then
-      log "crossfade: force-removing stale lock (age=${age}s)"
-      rmdir "$lock_dir" 2>/dev/null || rm -rf "$lock_dir" 2>/dev/null || true
-    fi
-  fi
-  if ! mkdir "$lock_dir" 2>/dev/null; then
-    log "crossfade: skipped (lock held at $lock_dir)"
+  : "${tpid:=$$}"
+  lock_file="/tmp/vbox-crossfade-${tpid}.pid"
+  local holder=""
+  [ -f "$lock_file" ] && holder="$(cat "$lock_file" 2>/dev/null)"
+  if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
+    # holder still alive — actually conflicting, no-op
+    log "crossfade: skipped (active holder pid=$holder)"
     return 0
   fi
-  trap 'rmdir "$lock_dir" 2>/dev/null; trap - EXIT' EXIT
+  echo "$$" > "$lock_file" 2>/dev/null || true
+  trap 'rm -f "$lock_file" 2>/dev/null; trap - EXIT' EXIT
 
   local from_slot to_slot from_sock to_sock
   if [ "$active_slot" = "A" ]; then
@@ -458,7 +454,7 @@ cmd_crossfade() {
 
   if [ -z "$from_sock" ] || [ -z "$to_sock" ]; then
     log "crossfade: missing sockets (from=$from_sock to=$to_sock)"
-    rmdir "$lock_dir" 2>/dev/null
+    rm -f "$lock_file" 2>/dev/null
     trap - EXIT
     return 0
   fi
@@ -484,7 +480,7 @@ cmd_crossfade() {
     "$IPC_HELPER" "$from_sock" stop
     tmux_set "$sess" "@vibe-active-slot" "$to_slot"
     log "crossfade: silent swap → $target_url (muted)"
-    rmdir "$lock_dir" 2>/dev/null
+    rm -f "$lock_file" 2>/dev/null
     trap - EXIT
     return 0
   fi
@@ -513,7 +509,7 @@ cmd_crossfade() {
   tmux_set "$sess" "@vibe-active-slot" "$to_slot"
   log "crossfade: END $from_slot→$to_slot $target_url"
 
-  rmdir "$lock_dir" 2>/dev/null
+  rm -f "$lock_file" 2>/dev/null
   trap - EXIT
 }
 
