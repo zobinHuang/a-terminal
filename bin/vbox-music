@@ -685,32 +685,26 @@ cmd_tick() {
   [ -n "$pane" ] || pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null)"
   _refresh_pane_intensity "$pane"
 
-  local intensity tier override emoji_label
+  local intensity tier override level
   intensity="$(tmux_get_pane "$pane" "@vibe-intensity")"
   intensity="${intensity:-0}"
   tier="$(_intensity_tier "$intensity")"
   override="$(tmux_get_win "$pane" "@vibe-mood-override")"
+  # Vibe level shown as a Unicode block height — ▂ low, ▄ mid, ▆ high.
   case "$tier" in
-    intense) emoji_label='🔥 cooking'  ;;
-    mellow)  emoji_label='🎷 grooving' ;;
-    *)       emoji_label='🌿 cruising' ;;
+    intense) level='▆' ;;
+    mellow)  level='▄' ;;
+    *)       level='▂' ;;
   esac
-  # a small lock icon when the user pinned the mood manually, so the
-  # status reflects "this is my choice, not the auto-picker"
-  [ -n "$override" ] && emoji_label="${emoji_label} 🔒"
+  # 🔒 if the user pinned the mood manually
+  [ -n "$override" ] && level="${level}🔒"
 
-  local station song marquee out
-  station="$(tmux_get_pane "$pane" "@vibe-station-label")"
+  local song marquee
   song="$(_now_playing "$active_sock")"
   # marquee position is per-window so each tab keeps its own scroll
   marquee="$(_marquee "$pane" "$song" 26)"
 
-  if [ -n "$station" ]; then
-    out="${emoji_label} · ${station} ♫ ${marquee}"
-  else
-    out="${emoji_label} ♫ ${marquee}"
-  fi
-  printf '%s' "$out"
+  printf '%s ♫ %s' "$level" "$marquee"
 }
 
 cmd_sync_attached() {

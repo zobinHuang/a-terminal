@@ -105,15 +105,15 @@ The `running …` counter is also per-tab — it resets when you create a new ta
 ### Status bar
 
 ```
-🌿 cruising · Groove Salad ♫ Distant Thunder — Foggy Path
-^^^^^^^^^^^   ^^^^^^^^^^^^   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   tier        station        scrolling now-playing
+▄ ♫ Distant Thunder — Foggy Path
+^   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+|   scrolling now-playing
+vibe-level bar
 ```
 
-- Tier emoji + vibe verb: 🌿 cruising / 🎷 grooving / 🔥 cooking
-- Station label from `~/.config/vibebox/stations.conf`
+- Vibe level: `▂` low (chill) · `▄` mid (mellow) · `▆` high (intense)
 - 26-char marquee that scrolls the current track (mpv ICY metadata, falling back to `media-title`)
-- 🔒 appears after the tier when you've pinned the mood manually
+- `▄🔒` (or whichever bar) when you've pinned the mood manually
 - 🔇 muted when you've muted with `Ctrl+t m`
 - 📻 off-air if mpv died or the stream is unreachable
 
