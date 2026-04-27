@@ -231,11 +231,22 @@ desc = { fg = "magenta" }
 separator       = "  "
 separator_style = { fg = "lightblack" }
 
-# Icons — wildcard catches every file/dir; the empty exts/globs/conds
-# arrays REPLACE (not append to) yazi's bundled per-language icon list.
-# Yazi caches the rendered icon set; users may need to run
-# `yazi --clear-cache` once after installing this theme.
+# Icons — yazi's bundled preset uses `prepend_*` arrays to inject the
+# Nerd-Font icon set on top of whatever the user defines. To fully
+# override, we have to clear BOTH the prepend_* and append_* arrays
+# in addition to the base ones, otherwise the bundled prepend list
+# wins and the per-extension icons still render as ?-boxes.
 [icon]
+prepend_globs = []
+prepend_conds = []
+prepend_exts  = []
+prepend_files = []
+prepend_dirs  = []
+append_globs  = []
+append_conds  = []
+append_exts   = []
+append_files  = []
+append_dirs   = []
 globs = []
 conds = []
 exts  = []
