@@ -32,32 +32,6 @@ vbox_bin() {
   echo "${CONDA_PREFIX}/bin/$1"
 }
 
-# ─── install via native package manager (brew on macOS, apt on Linux) ─
-install_native() {
-  # Stdin must NOT be the curl pipe: when this script is invoked via
-  # `curl ... | bash`, brew (or its child processes) will read from stdin
-  # and consume the rest of setup.sh, after which bash has nothing left to
-  # execute and exits silently right after "mpv installed". Fed brew from
-  # /dev/null; for apt, point stdin at /dev/tty so sudo can still prompt
-  # for a password if needed.
-  #
-  # Output is left un-silenced because mpv pulls in ffmpeg and a stack of
-  # media libs that easily take several minutes on a fresh machine, and a
-  # quiet script looks "stuck" to the user.
-  local pkg="$1"
-  if command -v brew &>/dev/null; then
-    brew install "$pkg" </dev/null || return 1
-  elif command -v apt-get &>/dev/null; then
-    if [ -e /dev/tty ]; then
-      sudo apt-get install -y "$pkg" </dev/tty || return 1
-    else
-      sudo apt-get install -y "$pkg" </dev/null || return 1
-    fi
-  else
-    return 1
-  fi
-}
-
 # ─── fetch a file from this repo's raw API (avoids CDN cache) ────────
 VBOX_REPO_API="https://api.github.com/repos/zobinHuang/vibebox/contents"
 vbox_fetch() {
@@ -223,10 +197,10 @@ elif [ -x "$(vbox_bin mpv)" ]; then
   info "mpv already installed in vibebox env"
 else
   warn "Installing mpv …"
-  if install_native mpv || install_pkg mpv; then
+  if install_pkg mpv; then
     info "mpv installed"
   else
-    warn "mpv install failed — vibe music will be unavailable. Install manually: brew install mpv  /  sudo apt install mpv"
+    warn "mpv install failed — vibe music will be unavailable. Install manually: conda install -n vibebox -c conda-forge mpv"
   fi
 fi
 
@@ -237,22 +211,24 @@ elif [ -x "$(vbox_bin socat)" ]; then
   info "socat already installed in vibebox env"
 else
   warn "Installing socat …"
-  if install_native socat || install_pkg socat; then
+  if install_pkg socat; then
     info "socat installed"
   else
-    warn "socat install failed — vibe music will be unavailable. Install manually: brew install socat  /  sudo apt install socat"
+    warn "socat install failed — vibe music will be unavailable. Install manually: conda install -n vibebox -c conda-forge socat"
   fi
 fi
 
 # jq (used to safely merge Claude Code hooks into ~/.claude/settings.json)
 if command -v jq &>/dev/null; then
   info "jq already installed"
+elif [ -x "$(vbox_bin jq)" ]; then
+  info "jq already installed in vibebox env"
 else
   warn "Installing jq …"
-  if install_native jq || install_pkg jq; then
+  if install_pkg jq; then
     info "jq installed"
   else
-    warn "jq install failed — Claude Code hooks merge will be skipped. Install manually if you want vibe state from claude: brew install jq  /  sudo apt install jq"
+    warn "jq install failed — Claude Code hooks merge will be skipped. Install manually if you want vibe state from claude: conda install -n vibebox -c conda-forge jq"
   fi
 fi
 
