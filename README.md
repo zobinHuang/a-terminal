@@ -97,6 +97,8 @@ That adds a single `source ~/.config/vibebox/shell-hooks.sh` line to your `~/.ba
 | `]` | Cycle mood **up** (auto → LOOSE → RAISE → TENSE → auto) — sticky, per tab |
 | `[` | Cycle mood **down** (auto → TENSE → RAISE → LOOSE → auto) — sticky, per tab |
 | `a` | Release manual mood for this tab, return to auto |
+| `=` / `+` | Raise vibe volume by 10 (max 100) — affects mpv only, not the OS mixer |
+| `-` | Lower vibe volume by 10 (min 0) |
 
 `[locked]` next to the tier label means the mood is pinned manually for the current tab (use `Ctrl+t a` to release). Each tab carries its own mood, so locking TENSE on tab 1 doesn't affect tab 2.
 
