@@ -219,12 +219,16 @@ cmd_start() {
   # attach). The subsequent client-attached hook unpauses us.
   cmd_sync_attached
 
-  # Kill our mpv processes when the session goes away. The PIDs are baked
-  # into the hook command at registration time, so the hook still works
-  # even if user options have already been torn down.
-  tmux set-hook -t "$sess" session-closed \
-    "run-shell -b \"kill $pid_a $pid_b 2>/dev/null; rm -rf '$sock_dir' 2>/dev/null\"" \
-    >/dev/null 2>&1 || true
+  # Stash cleanup state in a flat file keyed by session id. Tmux's
+  # session-scoped options and per-session hooks both vanish when the
+  # session is destroyed, so they can't drive cleanup at session-closed
+  # time. The global session-closed hook in tmux-vibe.conf reads this file.
+  local state_file="${VBOX_RUNTIME_DIR}/sess-${sess_clean}.state"
+  {
+    printf 'PID_A=%s\n'    "$pid_a"
+    printf 'PID_B=%s\n'    "$pid_b"
+    printf 'SOCK_DIR=%s\n' "$sock_dir"
+  } > "$state_file"
 
   log "start: spawned mpv pair (A=$pid_a B=$pid_b) for session $sess"
 }
@@ -233,7 +237,7 @@ cmd_stop() {
   local target="${1:-}" sess
   sess="$(_session_of "$target")"
   [ -n "$sess" ] || return 0
-  local slot pid sock
+  local slot pid sock sess_clean
   for slot in a b; do
     pid="$(tmux_get  "$sess" "@vibe-mpv-${slot}-pid")"
     sock="$(tmux_get "$sess" "@vibe-mpv-${slot}-sock")"
@@ -251,7 +255,35 @@ cmd_stop() {
   tmux_unset "$sess" "@vibe-muted"
   # restore session status-interval to inherit the global default
   tmux set-option -t "$sess" -u status-interval >/dev/null 2>&1 || true
+  # remove stashed cleanup state
+  sess_clean="${sess#\$}"
+  rm -f "${VBOX_RUNTIME_DIR}/sess-${sess_clean}.state"
   log "stop: torn down mpv slots for session $sess"
+}
+
+# Called by the global session-closed hook with the dying session's id.
+# Reads cleanup state from the flat file (tmux options are already gone),
+# kills the mpv pair, removes the socket dir.
+cmd_cleanup_session() {
+  local sess="${1:-}"
+  [ -n "$sess" ] || return 0
+  local sess_clean state_file
+  sess_clean="${sess#\$}"
+  state_file="${VBOX_RUNTIME_DIR}/sess-${sess_clean}.state"
+  [ -f "$state_file" ] || return 0
+  # shellcheck disable=SC1090  # dynamic path is intentional
+  . "$state_file"
+  for pid in "${PID_A:-}" "${PID_B:-}"; do
+    [ -n "$pid" ] || continue
+    if kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null || true
+      sleep 0.1
+      kill -9 "$pid" 2>/dev/null || true
+    fi
+  done
+  [ -n "${SOCK_DIR:-}" ] && rm -rf "$SOCK_DIR" 2>/dev/null
+  rm -f "$state_file"
+  log "cleanup-session: reaped mpv pair for $sess (pids=${PID_A:-} ${PID_B:-})"
 }
 
 # ─── crossfade ───────────────────────────────────────────────────────
@@ -561,15 +593,16 @@ USAGE
 cmd="${1:-}"
 shift || true
 case "$cmd" in
-  start)         cmd_start "$@" ;;
-  stop|kill)     cmd_stop  "$@" ;;
-  crossfade)     cmd_crossfade "$@" ;;
-  focus)         cmd_focus "$@" ;;
-  set-state)     cmd_set_state "$@" ;;
-  tick)          cmd_tick  "$@" ;;
-  mute)          cmd_mute  "$@" ;;
-  bump)          cmd_bump  "$@" ;;
-  sync-attached) cmd_sync_attached "$@" ;;
+  start)            cmd_start "$@" ;;
+  stop|kill)        cmd_stop  "$@" ;;
+  crossfade)        cmd_crossfade "$@" ;;
+  focus)            cmd_focus "$@" ;;
+  set-state)        cmd_set_state "$@" ;;
+  tick)             cmd_tick  "$@" ;;
+  mute)             cmd_mute  "$@" ;;
+  bump)             cmd_bump  "$@" ;;
+  sync-attached)    cmd_sync_attached "$@" ;;
+  cleanup-session)  cmd_cleanup_session "$@" ;;
   -h|--help|help|"") usage ;;
   *) usage; exit 1 ;;
 esac

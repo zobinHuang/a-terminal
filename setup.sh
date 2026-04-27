@@ -480,6 +480,7 @@ shift
 case "$CMD" in
   exit)
     if [ -n "${TMUX:-}" ]; then
+      command -v vbox-music >/dev/null 2>&1 && vbox-music stop 2>/dev/null || true
       tmux kill-session
     else
       echo "Not inside a tmux session."
@@ -534,6 +535,7 @@ case "$CMD" in
     fi
     SESSION_NAME="$(whoami)-$1"
     if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+      command -v vbox-music >/dev/null 2>&1 && vbox-music stop "$SESSION_NAME" 2>/dev/null || true
       tmux kill-session -t "$SESSION_NAME"
       echo "Killed session: $1"
     else
