@@ -277,6 +277,14 @@ cmd_start() {
     tmux_set_win "$win" "@vibe-window-created" "$now_ts"
   done < <(tmux list-windows -t "$sess" -F '#{window_id}' 2>/dev/null)
 
+  # Bootstrap @vibe-current-pane to the active pane of the new session.
+  # Without this, no focus event has fired yet, _refresh_pane_intensity's
+  # `current_pane == pane` check fails, and the first manual mood change
+  # (or pane state transition) never triggers a crossfade.
+  local initial_pane
+  initial_pane="$(tmux display-message -p -t "$sess" '#{pane_id}' 2>/dev/null)"
+  [ -n "$initial_pane" ] && tmux_set "$sess" "@vibe-current-pane" "$initial_pane"
+
   # Status-right inherits the main config's status-interval (1s) — that
   # gives the song marquee a smoother 1-char-per-second scroll and the
   # uptime/clock fresh-each-second feel. Load sampling at 1s is fine for
@@ -765,6 +773,12 @@ cmd_mood() {
       ;;
   esac
   _refresh_pane_intensity "$pane"
+  # Force a crossfade unconditionally — the user just pressed a mood key
+  # and expects to hear the change, even if the new tier maps to the same
+  # station as before (which happens when going auto→chill on an idle pane).
+  local url
+  url="$(tmux_get_pane "$pane" "@vibe-station")"
+  [ -n "$url" ] && cmd_crossfade "$url" >/dev/null 2>&1 &
 }
 
 # ─── main ────────────────────────────────────────────────────────────
