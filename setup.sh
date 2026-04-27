@@ -231,27 +231,27 @@ desc = { fg = "magenta" }
 separator       = "  "
 separator_style = { fg = "lightblack" }
 
-# Icons — yazi's bundled preset uses `prepend_*` arrays to inject the
-# Nerd-Font icon set on top of whatever the user defines. To fully
-# override, we have to clear BOTH the prepend_* and append_* arrays
-# in addition to the base ones, otherwise the bundled prepend list
-# wins and the per-extension icons still render as ?-boxes.
+# Icons — yazi 26.x's binary only recognizes these `[icon]` keys:
+#   globs, conds, prepend_globs, append_globs,
+#   prepend_dirs, append_dirs, prepend_files, append_files,
+#   prepend_exts, append_exts, prepend_conds, append_conds
+# (No bare `files`, `dirs`, or `exts` — those keys are silently
+# ignored, which is why earlier overrides left the bundled Nerd-Font
+# icons in place.) Putting our wildcard catch-all in `prepend_files`
+# and `prepend_dirs` makes it the first-and-only match yazi tries.
 [icon]
-prepend_globs = []
-prepend_conds = []
-prepend_exts  = []
-prepend_files = []
-prepend_dirs  = []
-append_globs  = []
-append_conds  = []
-append_exts   = []
-append_files  = []
-append_dirs   = []
 globs = []
 conds = []
-exts  = []
-files = [{ name = "*", text = "·" }]
-dirs  = [{ name = "*", text = "▸" }]
+prepend_globs = []
+append_globs  = []
+prepend_conds = []
+append_conds  = []
+prepend_files = [{ name = "*", text = "·" }]
+append_files  = []
+prepend_dirs  = [{ name = "*", text = "▸" }]
+append_dirs   = []
+prepend_exts  = []
+append_exts   = []
 TOML
 info "Patched theme.toml (plain icons + valid ANSI palette, no Nerd Font)"
 
