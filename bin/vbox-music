@@ -217,6 +217,10 @@ cmd_start() {
     "$IPC_HELPER" "$sock_a" loadfile "$default_url" replace
   fi
 
+  # Begin paused if no client is attached yet (vbox CLI calls start before
+  # attach). The subsequent client-attached hook unpauses us.
+  cmd_sync_attached
+
   # Kill our mpv processes when the session goes away. The PIDs are baked
   # into the hook command at registration time, so the hook still works
   # even if user options have already been torn down.
@@ -468,6 +472,27 @@ cmd_tick() {
   esac
 }
 
+cmd_sync_attached() {
+  # Walk every vibe-enabled session and pause the active slot when it has
+  # zero attached clients, unpause it when at least one is back. Called
+  # from client-attached / client-detached / client-session-changed hooks
+  # so mpv stops streaming the moment you detach.
+  local sess attached active_slot active_sock pause_val
+  while IFS='|' read -r sess attached; do
+    [ -n "$sess" ] || continue
+    active_slot="$(tmux_get "$sess" "@vibe-active-slot")"
+    [ -n "$active_slot" ] || continue
+    active_sock="$(tmux_get "$sess" "@vibe-mpv-$(echo "$active_slot" | tr 'A-Z' 'a-z')-sock")"
+    [ -n "$active_sock" ] || continue
+    if [ "${attached:-0}" -gt 0 ]; then
+      pause_val="no"
+    else
+      pause_val="yes"
+    fi
+    "$IPC_HELPER" "$active_sock" set_property pause "$pause_val"
+  done < <(tmux list-sessions -F '#{session_id}|#{session_attached}' 2>/dev/null)
+}
+
 cmd_mute() {
   local sess muted
   sess="$(_session_of)"
@@ -526,6 +551,7 @@ Usage: vbox-music <command> [args...]
 
   start [target]        spawn mpv slot pair for the given (or current) session
   stop  [target]        kill mpv slot pair for the given (or current) session
+  sync-attached         pause/unpause active slot per session_attached count
   crossfade <url>       crossfade active slot → inactive slot playing <url>
   focus <pane_id>       called by tmux pane-focus-in hook
   set-state <p> <s>     s ∈ {idle,running,thinking}
@@ -538,14 +564,15 @@ USAGE
 cmd="${1:-}"
 shift || true
 case "$cmd" in
-  start)     cmd_start "$@" ;;
-  stop|kill) cmd_stop  "$@" ;;
-  crossfade) cmd_crossfade "$@" ;;
-  focus)     cmd_focus "$@" ;;
-  set-state) cmd_set_state "$@" ;;
-  tick)      cmd_tick  "$@" ;;
-  mute)      cmd_mute  "$@" ;;
-  bump)      cmd_bump  "$@" ;;
+  start)         cmd_start "$@" ;;
+  stop|kill)     cmd_stop  "$@" ;;
+  crossfade)     cmd_crossfade "$@" ;;
+  focus)         cmd_focus "$@" ;;
+  set-state)     cmd_set_state "$@" ;;
+  tick)          cmd_tick  "$@" ;;
+  mute)          cmd_mute  "$@" ;;
+  bump)          cmd_bump  "$@" ;;
+  sync-attached) cmd_sync_attached "$@" ;;
   -h|--help|help|"") usage ;;
   *) usage; exit 1 ;;
 esac
