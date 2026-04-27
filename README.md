@@ -111,11 +111,29 @@ The `running …` counter is also per-tab — it resets when you create a new ta
 ▆ TENSE [locked] ♫ Rifftastic Rampage
 ```
 
-- Three vibe levels: `▂ LOOSE` (low) · `▄ RAISE` (mid) · `▆ TENSE` (high)
+- Vibe levels are configurable in `~/.config/vibebox/vibes.conf` (see below). Defaults: `▂ LOOSE` (low) · `▄ RAISE` (mid) · `▆ TENSE` (high)
 - 26-char marquee that scrolls the current track (mpv ICY metadata, falling back to `media-title`)
 - `[locked]` is appended when you've pinned the mood manually with `Ctrl+t ] / [`
 - 🔇 muted when you've muted with `Ctrl+t m`
 - 📻 off-air if mpv died or the stream is unreachable
+
+### Customizing vibe levels
+
+`~/.config/vibebox/vibes.conf` — defines the labels, glyphs, and intensity thresholds. Format:
+
+```
+<label> <glyph> <min_intensity> <max_intensity>
+```
+
+Defaults:
+
+```
+LOOSE  ▂  0.0  0.3
+RAISE  ▄  0.3  0.6
+TENSE  ▆  0.6  1.0
+```
+
+Each tier's mood-override midpoint is `(min + max) / 2`. Order in the file is the cycle order for `Ctrl+t ]` (next) and `Ctrl+t [` (prev). You can rename the labels, swap the glyphs, add a fourth or fifth tier, or move the boundaries — vbox-music re-reads on every status tick. Re-running `setup.sh` preserves your edits.
 
 ### Customizing stations
 
@@ -150,11 +168,14 @@ The default stations are 128 kbps MP3 streams (~1 MB/min). At any moment one slo
 ### Files
 
 ```
-~/.local/bin/vbox-music          dispatcher
-~/.local/bin/vbox-mpv-ipc        JSON command shim over mpv's IPC socket
-~/.config/vibebox/stations.conf  intensity → station map (user-editable)
-~/.config/vibebox/tmux-vibe.conf hooks, status segment, keybindings
-~/.config/vibebox/shell-hooks.sh preexec/precmd/DEBUG hooks
+~/.local/bin/vbox-music             dispatcher
+~/.local/bin/vbox-mpv-ipc           JSON command shim over mpv's IPC socket
+~/.local/bin/vbox-uptime            per-tab uptime helper
+~/.config/vibebox/vibes.conf        tier labels, glyphs, thresholds (user-editable)
+~/.config/vibebox/stations.conf     intensity → station map (user-editable)
+~/.config/vibebox/tmux-vibe.conf    hooks, status segment, keybindings
+~/.config/vibebox/shell-hooks.sh    preexec/precmd/DEBUG hooks
 ~/.config/vibebox/claude-hooks.json snippet merged into ~/.claude/settings.json
-~/.cache/vibebox/music.log       diagnostic log
+~/.cache/vibebox/music.log          diagnostic log
+~/.cache/vibebox/music-stderr.log   stderr from hook-fired commands
 ```

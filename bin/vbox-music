@@ -27,6 +27,7 @@ VBOX_LOG="${VBOX_LOG_DIR}/music.log"
 VBOX_RUNTIME_DIR="${TMPDIR:-/tmp}/vbox-mpv-$(id -u)"
 VBOX_CONFIG_DIR="${HOME}/.config/vibebox"
 STATIONS_CONF="${VBOX_CONFIG_DIR}/stations.conf"
+VIBES_CONF="${VBOX_CONFIG_DIR}/vibes.conf"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 IPC_HELPER="${SCRIPT_DIR}/vbox-mpv-ipc"
@@ -185,12 +186,26 @@ _marquee() {
   printf '%s' "${doubled:$pos:$width}"
 }
 
-_intensity_tier() {
-  awk -v i="${1:-0}" 'BEGIN{
-    if (i+0 < 0.3)      print "loose"
-    else if (i+0 < 0.6) print "raise"
-    else                print "tense"
-  }'
+# ─── vibes.conf parsing ──────────────────────────────────────────────
+# Format (per line): <label> <glyph> <min> <max>
+# Three helpers below; all driven by VIBES_CONF and tolerate it being
+# missing (everything falls through to a sane default — empty results).
+
+# Look up the tier whose [min, max] contains the given intensity. Returns
+# "label<TAB>glyph<TAB>min<TAB>max" or empty.
+_tier_for_intensity() {
+  local intensity="${1:-0}"
+  [ -f "$VIBES_CONF" ] || return 0
+  awk -v t="$intensity" '
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    NF >= 4 {
+      lo=$3+0; hi=$4+0
+      if (t+0 >= lo && t+0 <= hi) {
+        printf "%s\t%s\t%s\t%s\n", $1, $2, $3, $4
+        exit
+      }
+    }
+  ' "$VIBES_CONF"
 }
 
 # ─── mpv lifecycle (start / stop) ────────────────────────────────────
@@ -545,15 +560,60 @@ cmd_crossfade() {
 # Re-derives intensity from state + load, applies any active manual bump,
 # updates @vibe-station, and triggers a crossfade if the focused pane's
 # station just changed.
-# Map a tier name to a representative intensity in the middle of that
-# range (used by the manual mood override).
+# Look up the midpoint intensity for a tier label (used by the manual
+# mood override). Case-insensitive; canonical case from vibes.conf wins.
 _tier_to_intensity() {
-  case "${1:-}" in
-    loose) echo "0.150" ;;
-    raise) echo "0.450" ;;
-    tense) echo "0.850" ;;
-    *)     echo "" ;;
-  esac
+  local label="${1:-}"
+  [ -n "$label" ] && [ -f "$VIBES_CONF" ] || { echo ""; return; }
+  awk -v lbl="$label" '
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    NF >= 4 && tolower($1) == tolower(lbl) {
+      printf "%.3f", ($3 + $4) / 2
+      exit
+    }
+  ' "$VIBES_CONF"
+}
+
+# Canonicalise a user-supplied tier name to the case in vibes.conf,
+# returning empty if there is no match.
+_tier_canonical() {
+  local label="${1:-}"
+  [ -n "$label" ] && [ -f "$VIBES_CONF" ] || { echo ""; return; }
+  awk -v lbl="$label" '
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    NF >= 4 && tolower($1) == tolower(lbl) { print $1; exit }
+  ' "$VIBES_CONF"
+}
+
+# Walk vibes.conf and return the next tier label after `current`, or the
+# previous one when direction=prev. The boundary tiers wrap to "auto",
+# so the cycle is auto -> tier1 -> tier2 -> ... -> tierN -> auto.
+_tier_cycle() {
+  local direction="${1:-next}" current="${2:-}"
+  [ -f "$VIBES_CONF" ] || { echo ""; return; }
+  awk -v dir="$direction" -v cur="$current" '
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    NF >= 4 { n[++count] = $1 }
+    END {
+      if (count == 0) { print "auto"; exit }
+      if (cur == "" || tolower(cur) == "auto") {
+        if (dir == "prev") print n[count]; else print n[1]
+        exit
+      }
+      for (j = 1; j <= count; j++) {
+        if (tolower(n[j]) == tolower(cur)) {
+          if (dir == "prev") {
+            if (j == 1) print "auto"; else print n[j-1]
+          } else {
+            if (j == count) print "auto"; else print n[j+1]
+          }
+          exit
+        }
+      }
+      # current label not found in vibes.conf — start fresh at one end
+      if (dir == "prev") print n[count]; else print n[1]
+    }
+  ' "$VIBES_CONF"
 }
 
 _refresh_pane_intensity() {
@@ -685,18 +745,16 @@ cmd_tick() {
   [ -n "$pane" ] || pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null)"
   _refresh_pane_intensity "$pane"
 
-  local intensity tier override level_glyph level_label
+  local intensity tier_data level_label level_glyph override
   intensity="$(tmux_get_pane "$pane" "@vibe-intensity")"
   intensity="${intensity:-0}"
-  tier="$(_intensity_tier "$intensity")"
-  override="$(tmux_get_win "$pane" "@vibe-mood-override")"
-  # Vibe level: ▂ LOOSE  ·  ▄ RAISE  ·  ▆ TENSE
-  case "$tier" in
-    tense) level_glyph='▆'; level_label='TENSE' ;;
-    raise) level_glyph='▄'; level_label='RAISE' ;;
-    *)     level_glyph='▂'; level_label='LOOSE' ;;
-  esac
+  tier_data="$(_tier_for_intensity "$intensity")"
+  IFS=$'\t' read -r level_label level_glyph _ _ <<<"$tier_data"
+  # If vibes.conf is missing or has no matching range, render a neutral fallback.
+  [ -n "$level_glyph" ] || level_glyph='·'
+  [ -n "$level_label" ] || level_label='?'
 
+  override="$(tmux_get_win "$pane" "@vibe-mood-override")"
   local locked=""
   [ -n "$override" ] && locked=" [locked]"
 
@@ -810,38 +868,25 @@ cmd_mood() {
     auto|off|"")
       tmux_unset_win "$pane" "@vibe-mood-override"
       ;;
-    loose|raise|tense)
-      tmux_set_win "$pane" "@vibe-mood-override" "$arg"
-      ;;
-    next)
-      case "${cur:-auto}" in
-        auto|"") next="loose" ;;
-        loose)   next="raise" ;;
-        raise)   next="tense" ;;
-        tense)   next="auto"  ;;
-      esac
-      if [ "$next" = "auto" ]; then
-        tmux_unset_win "$pane" "@vibe-mood-override"
-      else
-        tmux_set_win "$pane" "@vibe-mood-override" "$next"
-      fi
-      ;;
-    prev)
-      case "${cur:-auto}" in
-        auto|"") next="tense" ;;
-        tense)   next="raise" ;;
-        raise)   next="loose" ;;
-        loose)   next="auto"  ;;
-      esac
-      if [ "$next" = "auto" ]; then
+    next|prev)
+      next="$(_tier_cycle "$arg" "$cur")"
+      if [ -z "$next" ] || [ "$next" = "auto" ]; then
         tmux_unset_win "$pane" "@vibe-mood-override"
       else
         tmux_set_win "$pane" "@vibe-mood-override" "$next"
       fi
       ;;
     *)
-      log "mood: unknown arg '$arg' (want loose|raise|tense|auto|next|prev)"
-      return 1
+      # Treat as a tier label — validate against vibes.conf and store in
+      # the canonical case it uses there.
+      local canonical
+      canonical="$(_tier_canonical "$arg")"
+      if [ -n "$canonical" ]; then
+        tmux_set_win "$pane" "@vibe-mood-override" "$canonical"
+      else
+        log "mood: unknown arg '$arg' (must match a label in $VIBES_CONF, or auto/next/prev)"
+        return 1
+      fi
       ;;
   esac
   _refresh_pane_intensity "$pane"
@@ -926,7 +971,7 @@ Usage: vbox-music <command> [args...]
   tick                  status-bar render: emoji + station + scrolling song
   mute                  toggle global mute
   bump <delta>          shift intensity by <delta> for 60s (e.g. +0.25)
-  mood <m>              m ∈ {loose,raise,tense,auto,next,prev} (sticky)
+  mood <m>              m ∈ <any vibes.conf label> | auto | next | prev (sticky)
 USAGE
 }
 

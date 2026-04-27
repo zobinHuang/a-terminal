@@ -485,6 +485,15 @@ else
   fi
 fi
 
+# vibes.conf — same: preserve user-defined tier labels / glyphs / thresholds
+if [ -f "$VBOX_CFG_DIR/vibes.conf" ]; then
+  info "vibes.conf already exists (preserving user edits)"
+else
+  if _vbox_install_or_fail config/vibes.conf "$VBOX_CFG_DIR/vibes.conf" "vibes.conf"; then
+    info "Installed default vibes.conf"
+  fi
+fi
+
 # ─── 4. install vbox command ─────────────────────────────────────
 echo ""
 echo "── vbox command ──────────────────────────────"
