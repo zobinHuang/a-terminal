@@ -274,6 +274,9 @@ bind -T tab_mode 6 select-window -t 6
 bind -T tab_mode 7 select-window -t 7
 bind -T tab_mode 8 select-window -t 8
 bind -T tab_mode 9 select-window -t 9
+# Nested-tmux passthrough: Ctrl+t Ctrl+t forwards Ctrl+t to the pane.
+# Use case: `vbox` running locally with an inner `vbox` over SSH.
+bind -T tab_mode C-t send-keys C-t
 
 # ─── pane mode: Ctrl+p → action ─────────────────────────────────────
 bind -n C-p switch-client -T pane_mode
@@ -289,6 +292,8 @@ bind -T pane_mode j select-pane -D
 bind -T pane_mode k select-pane -U
 bind -T pane_mode l select-pane -R
 bind -T pane_mode z resize-pane -Z
+# Nested passthrough — Ctrl+p Ctrl+p forwards Ctrl+p
+bind -T pane_mode C-p send-keys C-p
 
 # ─── resize mode: Ctrl+n → h/j/k/l (repeatable) ────────────────────
 bind -n C-n switch-client -T resize_mode
@@ -300,6 +305,18 @@ bind -r -T resize_mode Left resize-pane -L 2
 bind -r -T resize_mode Right resize-pane -R 2
 bind -r -T resize_mode Up resize-pane -U 2
 bind -r -T resize_mode Down resize-pane -D 2
+# Nested passthrough — Ctrl+n Ctrl+n forwards Ctrl+n
+bind -T resize_mode C-n send-keys C-n
+
+# ─── F12: nested-tmux passthrough toggle ─────────────────────────────
+# When you're inside an inner tmux (e.g. SSH'd into a remote vbox),
+# the outer tmux intercepts Ctrl+t/p/n and Alt+arrows. F12 swaps the
+# active key-table to "off" so every outer binding becomes inert and
+# keystrokes pass straight through to the pane (= the inner tmux).
+# Press F12 again to restore the outer's bindings. status-left shows
+# `[PASSTHRU]` while in off-mode so you don't forget you're in it.
+bind -T root F12 set key-table off \; refresh-client -S
+bind -T off  F12 set -u key-table  \; refresh-client -S
 
 # ─── keep custom tab names ───────────────────────────────────────────
 setw -g automatic-rename off
@@ -313,8 +330,10 @@ set -g renumber-windows on
 # ─── status bar (tab bar) ────────────────────────────────────────────
 set -g status-position bottom
 set -g status-style "bg=#1e1e2e,fg=#cdd6f4"
-set -g status-left-length 45
-set -g status-left "#[bg=#cba6f7,fg=#1e1e2e,bold] VibeBox #[default] #[bg=#89b4fa,fg=#1e1e2e,bold] ◆ #S #[default] "
+set -g status-left-length 60
+# A bright yellow [PASSTHRU] block appears when F12 has switched the
+# active key-table to "off" (nested-tmux passthrough mode).
+set -g status-left "#[bg=#cba6f7,fg=#1e1e2e,bold] VibeBox #[default] #[bg=#89b4fa,fg=#1e1e2e,bold] ◆ #S #[default]#{?#{==:#{client_key_table},off}, #[bg=#f9e2af#,fg=#1e1e2e#,bold] PASSTHRU #[default],} "
 set -g status-right-length 140
 # vbox-music tick is short-circuit-cheap (<5ms) when there's no @vibe-active-slot
 # on the session, so calling it unconditionally costs almost nothing for non-vibe
