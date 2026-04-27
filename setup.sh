@@ -277,6 +277,14 @@ bind -T tab_mode 9 select-window -t 9
 # Nested-tmux passthrough: Ctrl+t Ctrl+t forwards Ctrl+t to the pane.
 # Use case: `vbox` running locally with an inner `vbox` over SSH.
 bind -T tab_mode C-t send-keys C-t
+# Alt+arrows aren't chord triggers, so the outer always intercepts them.
+# `Ctrl+t Alt+<dir>` forwards the chord to the pane for quick inner-side
+# pane/window navigation. For longer stretches of inner-side work, use
+# F12 to fully disable outer bindings (see below).
+bind -T tab_mode M-Left  send-keys M-Left
+bind -T tab_mode M-Right send-keys M-Right
+bind -T tab_mode M-Up    send-keys M-Up
+bind -T tab_mode M-Down  send-keys M-Down
 
 # ─── pane mode: Ctrl+p → action ─────────────────────────────────────
 bind -n C-p switch-client -T pane_mode
