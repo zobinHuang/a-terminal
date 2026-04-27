@@ -665,11 +665,21 @@ _refresh_pane_intensity() {
   elif [ "$state" = "idle" ]; then
     intensity="0.000"
   else
-    local pane_pid cpu_share mem_share
+    local pane_pid cpu_share mem_share base
     pane_pid="$(tmux display-message -p -t "$pane" '#{pane_pid}' 2>/dev/null)"
     read -r cpu_share mem_share <<<"$(_vbox_pane_load "$pane_pid")"
-    intensity="$(awk -v c="${cpu_share:-0}" -v m="${mem_share:-0}" 'BEGIN{
-      x = 0.2 + c + 0.5*m
+    # Different bases per state so the autoscale matches the spec:
+    #  - running: 0.2 + load → LOOSE for an idle shell, climbs into
+    #             RAISE/TENSE under real CPU/memory pressure
+    #  - thinking: 0.5 + load → RAISE by default (Claude waits on HTTP
+    #             with near-zero CPU; without a base we'd stay at LOOSE),
+    #             escalates to TENSE when tools spike CPU
+    case "$state" in
+      thinking) base="0.5" ;;
+      *)        base="0.2" ;;
+    esac
+    intensity="$(awk -v b="$base" -v c="${cpu_share:-0}" -v m="${mem_share:-0}" 'BEGIN{
+      x = b + c + 0.5*m
       if (x<0) x=0; if (x>1) x=1
       printf "%.3f", x
     }')"
@@ -763,9 +773,11 @@ cmd_tick() {
   [ -n "$pane" ] || pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null)"
   _refresh_pane_intensity "$pane"
 
-  local intensity tier_data level_label level_glyph override
+  local intensity intensity_2 tier_data level_label level_glyph override
   intensity="$(tmux_get_pane "$pane" "@vibe-intensity")"
   intensity="${intensity:-0}"
+  # Display 2 decimals — diagnostic at-a-glance, fits in the bar.
+  intensity_2="$(awk -v v="$intensity" 'BEGIN{printf "%.2f", v+0}')"
   tier_data="$(_tier_for_intensity "$intensity")"
   IFS=$'\t' read -r level_label level_glyph _ _ <<<"$tier_data"
   # If vibes.conf is missing or has no matching range, render a neutral fallback.
@@ -781,7 +793,7 @@ cmd_tick() {
   # marquee position is per-window so each tab keeps its own scroll
   marquee="$(_marquee "$pane" "$song" 26)"
 
-  printf '%s %s%s ♫ %s' "$level_glyph" "$level_label" "$locked" "$marquee"
+  printf '%s %s %s%s ♫ %s' "$level_glyph" "$level_label" "$intensity_2" "$locked" "$marquee"
 }
 
 cmd_sync_attached() {
