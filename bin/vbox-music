@@ -400,23 +400,29 @@ _reap_dead_sessions() {
 # A `mkdir` lock gives us atomic "no-op on overlap" without depending on
 # flock (not present on macOS by default).
 cmd_crossfade() {
-  local target_url="${1:-}"
+  local target_url="${1:-}" target="${2:-}"
   [ -n "$target_url" ] || { log "crossfade: no url"; return 0; }
 
   local sess
-  sess="$(_session_of)"
-  [ -n "$sess" ] || return 0
+  sess="$(_session_of "$target")"
+  if [ -z "$sess" ]; then
+    log "crossfade: no session resolved (target=${target:-<none>})"
+    return 0
+  fi
   local active_slot
   active_slot="$(tmux_get "$sess" "@vibe-active-slot")"
-  [ -n "$active_slot" ] || { log "crossfade: no active slot"; return 0; }
+  [ -n "$active_slot" ] || { log "crossfade: no active slot for $sess"; return 0; }
 
   local muted
   muted="$(tmux_get "$sess" "@vibe-muted")"
 
   # atomic lock — overlapping crossfades no-op rather than queue
-  local lock_dir="/tmp/vbox-crossfade-$(_tmux_pid).lock"
+  local tpid
+  tpid="$(_tmux_pid)"
+  : "${tpid:=$$}"  # fallback so we still get a unique-enough lock path
+  local lock_dir="/tmp/vbox-crossfade-${tpid}.lock"
   if ! mkdir "$lock_dir" 2>/dev/null; then
-    log "crossfade: skipped (lock held)"
+    log "crossfade: skipped (lock held at $lock_dir)"
     return 0
   fi
   trap 'rmdir "$lock_dir" 2>/dev/null; trap - EXIT' EXIT
@@ -554,7 +560,7 @@ _refresh_pane_intensity() {
   local current_pane
   current_pane="$(tmux_get "$sess" "@vibe-current-pane")"
   if [ "$current_pane" = "$pane" ] && [ "$url" != "$prev_url" ]; then
-    cmd_crossfade "$url" >/dev/null 2>&1 &
+    cmd_crossfade "$url" "$pane" >/dev/null 2>&1 &
   fi
 }
 
@@ -574,7 +580,7 @@ cmd_focus() {
   local url
   url="$(tmux_get_pane "$pane" "@vibe-station")"
   [ -n "$url" ] || return 0
-  cmd_crossfade "$url"
+  cmd_crossfade "$url" "$pane"
 }
 
 cmd_set_state() {
@@ -703,10 +709,10 @@ cmd_mute() {
 cmd_bump() {
   local delta="${1:-0}"
   local sess pane bump_until bump_offset now
-  sess="$(_session_of)"
-  pane="$(tmux_get "$sess" "@vibe-current-pane")"
-  [ -n "$pane" ] || pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null)"
+  pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null)"
   [ -n "$pane" ] || return 0
+  sess="$(_session_of "$pane")"
+  [ -n "$sess" ] || return 0
   now="$(date +%s)"
   bump_offset="$(tmux_get_pane "$pane" "@vibe-bump-offset")"
   bump_offset="$(awk -v cur="${bump_offset:-0}" -v d="$delta" 'BEGIN{
@@ -726,11 +732,13 @@ cmd_bump() {
 # Args: chill | mellow | intense | auto | next | prev
 cmd_mood() {
   local arg="${1:-next}" sess pane cur next
-  sess="$(_session_of)"
-  [ -n "$sess" ] || return 0
-  pane="$(tmux_get "$sess" "@vibe-current-pane")"
-  [ -n "$pane" ] || pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null)"
+  # resolve the pane from the keybinding context, then derive the
+  # session from it — _session_of() with no args can return the wrong
+  # session when invoked from run-shell -b
+  pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null)"
   [ -n "$pane" ] || return 0
+  sess="$(_session_of "$pane")"
+  [ -n "$sess" ] || return 0
 
   cur="$(tmux_get_win "$pane" "@vibe-mood-override")"
 
@@ -778,7 +786,7 @@ cmd_mood() {
   # station as before (which happens when going auto→chill on an idle pane).
   local url
   url="$(tmux_get_pane "$pane" "@vibe-station")"
-  [ -n "$url" ] && cmd_crossfade "$url" >/dev/null 2>&1 &
+  [ -n "$url" ] && cmd_crossfade "$url" "$pane" >/dev/null 2>&1 &
 }
 
 # ─── main ────────────────────────────────────────────────────────────
