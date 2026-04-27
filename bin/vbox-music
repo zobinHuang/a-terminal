@@ -437,15 +437,27 @@ cmd_crossfade() {
   to_sock="$(tmux_get   "$sess" "@vibe-mpv-$(echo "$to_slot"   | tr 'A-Z' 'a-z')-sock")"
 
   if [ -z "$from_sock" ] || [ -z "$to_sock" ]; then
-    log "crossfade: missing sockets"
+    log "crossfade: missing sockets (from=$from_sock to=$to_sock)"
     rmdir "$lock_dir" 2>/dev/null
     trap - EXIT
     return 0
   fi
+  log "crossfade: BEGIN $from_slot→$to_slot url=$target_url sess=$sess"
+
+  # CRITICAL: mpv's `pause` property is sticky across files. If anything
+  # paused this slot earlier (sync-attached on detach, an old crossfade,
+  # whatever), loadfile loads in paused state and the new audio is
+  # silent forever — even though volumes happily ramp up. Force both
+  # slots to playing state up front.
+  "$IPC_HELPER" "$from_sock" set_property pause no
+  "$IPC_HELPER" "$to_sock"   set_property pause no
 
   # load target on the inactive slot at zero volume
   "$IPC_HELPER" "$to_sock" set_property volume 0
   "$IPC_HELPER" "$to_sock" loadfile "$target_url" replace
+  # belt-and-suspenders: re-assert pause=no AFTER loadfile, since some
+  # mpv versions reset pause when starting a new file
+  "$IPC_HELPER" "$to_sock" set_property pause no
 
   # if muted, just swap silently — no audible fade
   if [ "$muted" = "1" ]; then
@@ -473,11 +485,13 @@ cmd_crossfade() {
   # snap to final state in case any step was lost
   "$IPC_HELPER" "$from_sock" set_property volume 0
   "$IPC_HELPER" "$to_sock"   set_property volume 100
-  # silence the now-inactive slot to free network bandwidth
+  # silence the now-inactive slot — pause first (so even if `stop` is
+  # ignored, no audio gets out), then stop to free the network read
+  "$IPC_HELPER" "$from_sock" set_property pause yes
   "$IPC_HELPER" "$from_sock" stop
 
   tmux_set "$sess" "@vibe-active-slot" "$to_slot"
-  log "crossfade: $from_slot→$to_slot $target_url"
+  log "crossfade: END $from_slot→$to_slot $target_url"
 
   rmdir "$lock_dir" 2>/dev/null
   trap - EXIT
@@ -677,8 +691,13 @@ cmd_sync_attached() {
 }
 
 cmd_mute() {
-  local sess muted
-  sess="$(_session_of)"
+  local pane_arg="${1:-}" sess muted pane
+  if [ -n "$pane_arg" ]; then
+    pane="$pane_arg"
+  else
+    pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null)"
+  fi
+  sess="$(_session_of "$pane")"
   [ -n "$sess" ] || return 0
   muted="$(tmux_get "$sess" "@vibe-muted")"
   local active_slot active_sock
@@ -731,14 +750,20 @@ cmd_bump() {
 # Each tab carries its own mood; switching tabs swaps in that tab's mood.
 # Args: chill | mellow | intense | auto | next | prev
 cmd_mood() {
-  local arg="${1:-next}" sess pane cur next
-  # resolve the pane from the keybinding context, then derive the
-  # session from it — _session_of() with no args can return the wrong
-  # session when invoked from run-shell -b
-  pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null)"
-  [ -n "$pane" ] || return 0
+  local arg="${1:-next}" pane_arg="${2:-}" sess pane cur next
+  # Prefer the pane id passed by the keybinding (`#{pane_id}` substituted
+  # at hook fire time, before forking) — it's authoritative. Fall back to
+  # display-message only if the caller didn't pass one (e.g., manual CLI
+  # invocation from inside a vibe pane).
+  if [ -n "$pane_arg" ]; then
+    pane="$pane_arg"
+  else
+    pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null)"
+  fi
+  [ -n "$pane" ] || { log "mood: no pane resolved"; return 0; }
   sess="$(_session_of "$pane")"
-  [ -n "$sess" ] || return 0
+  [ -n "$sess" ] || { log "mood: no session for pane $pane"; return 0; }
+  log "mood: arg=$arg pane=$pane sess=$sess"
 
   cur="$(tmux_get_win "$pane" "@vibe-mood-override")"
 
@@ -789,6 +814,58 @@ cmd_mood() {
   [ -n "$url" ] && cmd_crossfade "$url" "$pane" >/dev/null 2>&1 &
 }
 
+# Diagnostic dump — paste this output when reporting issues. Shows the
+# session/window/pane state, the mpv processes vbox-music thinks it owns,
+# and a probe of each socket's IPC roundtrip.
+cmd_diag() {
+  local pane sess
+  pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null)"
+  sess="$(_session_of "$pane")"
+  echo "── vbox-music diag ─────────────────────────────"
+  echo "tmux:    $(tmux -V 2>/dev/null)"
+  echo "pane:    $pane"
+  echo "sess:    $sess"
+  if [ -n "$sess" ]; then
+    echo ""
+    echo "session options:"
+    for opt in "@vibe-active-slot" "@vibe-current-pane" "@vibe-muted" \
+               "@vibe-mpv-a-sock" "@vibe-mpv-b-sock" \
+               "@vibe-mpv-a-pid" "@vibe-mpv-b-pid"; do
+      printf "  %-22s = %s\n" "$opt" "$(tmux_get "$sess" "$opt")"
+    done
+    echo ""
+    echo "window options (current pane's window):"
+    for opt in "@vibe-window-created" "@vibe-mood-override" "@vibe-marquee-pos"; do
+      printf "  %-22s = %s\n" "$opt" "$(tmux_get_win "$pane" "$opt")"
+    done
+    echo ""
+    echo "pane options (current pane):"
+    for opt in "@vibe-state" "@vibe-intensity" "@vibe-station" "@vibe-station-label"; do
+      printf "  %-22s = %s\n" "$opt" "$(tmux_get_pane "$pane" "$opt")"
+    done
+  fi
+  echo ""
+  echo "mpv processes (whole system):"
+  pgrep -af 'mpv.*input-ipc-server' || echo "  (none)"
+  echo ""
+  echo "ipc probe — mpv pause + filename for each slot:"
+  for slot in a b; do
+    local sock pause_v file_v
+    sock="$(tmux_get "$sess" "@vibe-mpv-${slot}-sock")"
+    if [ -z "$sock" ] || [ ! -S "$sock" ]; then
+      echo "  $slot: socket missing ($sock)"
+      continue
+    fi
+    pause_v="$(_mpv_get "$sock" "pause")"
+    file_v="$(_mpv_get  "$sock" "filename")"
+    echo "  $slot ($sock): pause=$pause_v file=$file_v"
+  done
+  echo ""
+  echo "music.log tail:"
+  tail -n 20 "$VBOX_LOG" 2>/dev/null | sed 's/^/  /' || echo "  (no log)"
+  echo "─────────────────────────────────────────────────"
+}
+
 # ─── main ────────────────────────────────────────────────────────────
 usage() {
   cat <<'USAGE'
@@ -823,6 +900,7 @@ case "$cmd" in
   sync-attached)    cmd_sync_attached "$@" ;;
   cleanup-session)  cmd_cleanup_session "$@" ;;
   reap)             _reap_dead_sessions ;;
+  diag)             cmd_diag "$@" ;;
   -h|--help|help|"") usage ;;
   *) usage; exit 1 ;;
 esac
