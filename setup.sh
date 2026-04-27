@@ -34,11 +34,25 @@ vbox_bin() {
 
 # ─── install via native package manager (brew on macOS, apt on Linux) ─
 install_native() {
+  # Stdin must NOT be the curl pipe: when this script is invoked via
+  # `curl ... | bash`, brew (or its child processes) will read from stdin
+  # and consume the rest of setup.sh, after which bash has nothing left to
+  # execute and exits silently right after "mpv installed". Fed brew from
+  # /dev/null; for apt, point stdin at /dev/tty so sudo can still prompt
+  # for a password if needed.
+  #
+  # Output is left un-silenced because mpv pulls in ffmpeg and a stack of
+  # media libs that easily take several minutes on a fresh machine, and a
+  # quiet script looks "stuck" to the user.
   local pkg="$1"
   if command -v brew &>/dev/null; then
-    brew install "$pkg" >/dev/null 2>&1 || return 1
+    brew install "$pkg" </dev/null || return 1
   elif command -v apt-get &>/dev/null; then
-    sudo apt-get install -y "$pkg" >/dev/null 2>&1 || return 1
+    if [ -e /dev/tty ]; then
+      sudo apt-get install -y "$pkg" </dev/tty || return 1
+    else
+      sudo apt-get install -y "$pkg" </dev/null || return 1
+    fi
   else
     return 1
   fi
