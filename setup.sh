@@ -436,110 +436,130 @@ echo "── vbox command ──────────────────
 VBOX_BIN="$HOME/.local/bin/vbox"
 
 mkdir -p "$HOME/.local/bin"
-printf '%s\n' '#!/usr/bin/env bash' \
-  '# [vibebox]' \
-  'set -euo pipefail' \
-  '' \
-  'usage() {' \
-  '  echo "Usage:"' \
-  '  echo "  vbox new <session-name>   Create and attach to a new tmux+zellij session"' \
-  '  echo "  vbox attach <name>        Attach to an existing session"' \
-  '  echo "  vbox ls                   List all vbox sessions"' \
-  '  echo "  vbox kill <name>          Kill a session by name"' \
-  '  echo "  vbox exit                 Kill current session"' \
-  '  exit 1' \
-  '}' \
-  '' \
-  'if [ $# -lt 1 ]; then' \
-  '  usage' \
-  'fi' \
-  '' \
-  'CMD="$1"' \
-  '' \
-  'case "$CMD" in' \
-  '  exit)' \
-  '    if [ -n "${TMUX:-}" ]; then' \
-  '      tmux kill-session' \
-  '    else' \
-  '      echo "Not inside a tmux session."' \
-  '    fi' \
-  '    ;;' \
-  '  attach)' \
-  '    if [ $# -lt 2 ]; then' \
-  '      echo "Usage: vbox attach <session-name>"' \
-  '      exit 1' \
-  '    fi' \
-  '    SESSION_NAME="$(whoami)-$2"' \
-  '    if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then' \
-  '      tmux attach-session -t "$SESSION_NAME"' \
-  '    else' \
-  '      echo "Session '\''$SESSION_NAME'\'' not found."' \
-  '      echo "Available sessions:"' \
-  '      tmux list-sessions 2>/dev/null || echo "  (none)"' \
-  '      exit 1' \
-  '    fi' \
-  '    ;;' \
-  '  ls)' \
-  '    PREFIX="$(whoami)-"' \
-  '    FOUND=0' \
-  '    NOW=$(date +%s)' \
-  '    while IFS="|" read -r SNAME CREATED; do' \
-  '      if [[ "$SNAME" == "$PREFIX"* ]]; then' \
-  '        SHORT="${SNAME#$PREFIX}"' \
-  '        ELAPSED=$(( NOW - CREATED ))' \
-  '        DAYS=$(( ELAPSED / 86400 ))' \
-  '        HOURS=$(( (ELAPSED % 86400) / 3600 ))' \
-  '        MINS=$(( (ELAPSED % 3600) / 60 ))' \
-  '        if [ "$DAYS" -gt 0 ]; then' \
-  '          DUR="${DAYS}d ${HOURS}h"' \
-  '        elif [ "$HOURS" -gt 0 ]; then' \
-  '          DUR="${HOURS}h ${MINS}m"' \
-  '        else' \
-  '          DUR="${MINS}m"' \
-  '        fi' \
-  '        CREATED_FMT=$(date -d "@$CREATED" "+%Y-%m-%d %H:%M" 2>/dev/null || date -r "$CREATED" "+%Y-%m-%d %H:%M" 2>/dev/null || echo "unknown")' \
-  '        printf "  %-20s created: %s  uptime: %s\n" "$SHORT" "$CREATED_FMT" "$DUR"' \
-  '        FOUND=1' \
-  '      fi' \
-  '    done < <(tmux list-sessions -F "#{session_name}|#{session_created}" 2>/dev/null || true)' \
-  '    if [ "$FOUND" -eq 0 ]; then' \
-  '      echo "No vbox sessions."' \
-  '    fi' \
-  '    ;;' \
-  '  kill)' \
-  '    if [ $# -lt 2 ]; then' \
-  '      echo "Usage: vbox kill <session-name>"' \
-  '      exit 1' \
-  '    fi' \
-  '    SESSION_NAME="$(whoami)-$2"' \
-  '    if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then' \
-  '      tmux kill-session -t "$SESSION_NAME"' \
-  '      echo "Killed session: $2"' \
-  '    else' \
-  '      echo "Session '\''$2'\'' not found."' \
-  '    fi' \
-  '    ;;' \
-  '  new)' \
-  '    if [ $# -lt 2 ]; then' \
-  '      echo "Usage: vbox new <session-name>"' \
-  '      exit 1' \
-  '    fi' \
-  '    SESSION_NAME="$(whoami)-$2"' \
-  '    if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then' \
-  '      echo "Session '\''$SESSION_NAME'\'' already exists. Use '\''vbox attach $2'\'' instead."' \
-  '      exit 1' \
-  '    else' \
-  '      tmux new-session -d -s "$SESSION_NAME" -c "$HOME"' \
-  '      tmux attach-session -t "$SESSION_NAME"' \
-  '    fi' \
-  '    ;;' \
-  '  -h|--help)' \
-  '    usage' \
-  '    ;;' \
-  '  *)' \
-  '    usage' \
-  '    ;;' \
-  'esac' > "$VBOX_BIN"
+cat > "$VBOX_BIN" <<'VBOX_SCRIPT'
+#!/usr/bin/env bash
+# [vibebox]
+set -euo pipefail
+
+usage() {
+  echo "Usage:"
+  echo "  vbox new [--vibe] <session-name>   Create and attach to a new vbox session"
+  echo "  vbox attach <name>                 Attach to an existing session"
+  echo "  vbox ls                            List all vbox sessions"
+  echo "  vbox kill <name>                   Kill a session by name"
+  echo "  vbox exit                          Kill current session"
+  echo ""
+  echo "  --vibe : start the ambient vibe-music engine for the new session"
+  echo "           (or set VBOX_VIBE=1 in the environment)"
+  exit 1
+}
+
+if [ $# -lt 1 ]; then
+  usage
+fi
+
+CMD="$1"
+shift
+
+case "$CMD" in
+  exit)
+    if [ -n "${TMUX:-}" ]; then
+      tmux kill-session
+    else
+      echo "Not inside a tmux session."
+    fi
+    ;;
+  attach)
+    if [ $# -lt 1 ]; then
+      echo "Usage: vbox attach <session-name>"
+      exit 1
+    fi
+    SESSION_NAME="$(whoami)-$1"
+    if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+      tmux attach-session -t "$SESSION_NAME"
+    else
+      echo "Session '$SESSION_NAME' not found."
+      echo "Available sessions:"
+      tmux list-sessions 2>/dev/null || echo "  (none)"
+      exit 1
+    fi
+    ;;
+  ls)
+    PREFIX="$(whoami)-"
+    FOUND=0
+    NOW=$(date +%s)
+    while IFS="|" read -r SNAME CREATED; do
+      if [[ "$SNAME" == "$PREFIX"* ]]; then
+        SHORT="${SNAME#$PREFIX}"
+        ELAPSED=$(( NOW - CREATED ))
+        DAYS=$(( ELAPSED / 86400 ))
+        HOURS=$(( (ELAPSED % 86400) / 3600 ))
+        MINS=$(( (ELAPSED % 3600) / 60 ))
+        if [ "$DAYS" -gt 0 ]; then
+          DUR="${DAYS}d ${HOURS}h"
+        elif [ "$HOURS" -gt 0 ]; then
+          DUR="${HOURS}h ${MINS}m"
+        else
+          DUR="${MINS}m"
+        fi
+        CREATED_FMT=$(date -d "@$CREATED" "+%Y-%m-%d %H:%M" 2>/dev/null || date -r "$CREATED" "+%Y-%m-%d %H:%M" 2>/dev/null || echo "unknown")
+        printf "  %-20s created: %s  uptime: %s\n" "$SHORT" "$CREATED_FMT" "$DUR"
+        FOUND=1
+      fi
+    done < <(tmux list-sessions -F "#{session_name}|#{session_created}" 2>/dev/null || true)
+    if [ "$FOUND" -eq 0 ]; then
+      echo "No vbox sessions."
+    fi
+    ;;
+  kill)
+    if [ $# -lt 1 ]; then
+      echo "Usage: vbox kill <session-name>"
+      exit 1
+    fi
+    SESSION_NAME="$(whoami)-$1"
+    if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+      tmux kill-session -t "$SESSION_NAME"
+      echo "Killed session: $1"
+    else
+      echo "Session '$1' not found."
+    fi
+    ;;
+  new)
+    VIBE=0
+    [ "${VBOX_VIBE:-}" = "1" ] && VIBE=1
+    NAME=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --vibe)    VIBE=1; shift ;;
+        --no-vibe) VIBE=0; shift ;;
+        --) shift; NAME="${1:-}"; break ;;
+        -*) echo "vbox new: unknown flag $1" >&2; exit 1 ;;
+        *)  NAME="$1"; shift ;;
+      esac
+    done
+    if [ -z "$NAME" ]; then
+      echo "Usage: vbox new [--vibe] <session-name>"
+      exit 1
+    fi
+    SESSION_NAME="$(whoami)-$NAME"
+    if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+      echo "Session '$SESSION_NAME' already exists. Use 'vbox attach $NAME' instead."
+      exit 1
+    fi
+    tmux new-session -d -s "$SESSION_NAME" -c "$HOME"
+    if [ "$VIBE" = "1" ]; then
+      if command -v vbox-music >/dev/null 2>&1; then
+        vbox-music start "$SESSION_NAME" || true
+      else
+        echo "vbox: --vibe requested but vbox-music isn't on PATH; continuing without music." >&2
+      fi
+    fi
+    tmux attach-session -t "$SESSION_NAME"
+    ;;
+  -h|--help) usage ;;
+  *)         usage ;;
+esac
+VBOX_SCRIPT
 chmod +x "$VBOX_BIN"
 info "Installed vbox command to $VBOX_BIN"
 
@@ -557,8 +577,9 @@ if command -v conda &>/dev/null; then
   fi
 fi
 
-# remove old vibebox path line if exists, then write fresh
-sed -i.bak "/$PATH_MARKER/,+1d" "$SHELL_RC" 2>/dev/null || true
+# remove old vibebox path line if exists, then write fresh.
+# Brackets in PATH_MARKER are regex metacharacters; literal-match them.
+sed -i.bak '/# \[vibebox\] path/,+1d' "$SHELL_RC" 2>/dev/null || true
 rm -f "${SHELL_RC}.bak"
 
 if [ -n "$VBOX_ENV_BIN" ]; then
@@ -576,13 +597,19 @@ warn "Run 'source $SHELL_RC' or restart your shell"
 # sessions inside an opted-in shell are still no-op.
 HOOK_MARKER="# [vibebox] vibe-hooks"
 HOOK_LINE="[ -f \$HOME/.config/vibebox/shell-hooks.sh ] && . \$HOME/.config/vibebox/shell-hooks.sh"
-# always strip any prior copy first (idempotent re-install / opt-out path)
-sed -i.bak "/$HOOK_MARKER/,+1d" "$SHELL_RC" 2>/dev/null || true
-rm -f "${SHELL_RC}.bak"
-if [ "${VBOX_VIBE:-}" = "1" ]; then
-  printf '\n%s\n%s\n' "$HOOK_MARKER" "$HOOK_LINE" >> "$SHELL_RC"
-  info "Wired vibe-music shell hooks into $(basename "$SHELL_RC") (VBOX_VIBE=1)"
-fi
+# Patch both rc files: setup.sh runs in bash but the user's login shell may
+# be zsh. Strip any prior copy first (idempotent re-install / opt-out path),
+# then re-add only when explicitly opted in via VBOX_VIBE=1.
+for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
+  [ -f "$RC" ] || continue
+  # Brackets in HOOK_MARKER are regex metacharacters; literal-match them.
+  sed -i.bak '/# \[vibebox\] vibe-hooks/,+1d' "$RC" 2>/dev/null || true
+  rm -f "${RC}.bak"
+  if [ "${VBOX_VIBE:-}" = "1" ]; then
+    printf '\n%s\n%s\n' "$HOOK_MARKER" "$HOOK_LINE" >> "$RC"
+    info "Wired vibe-music shell hooks into $(basename "$RC") (VBOX_VIBE=1)"
+  fi
+done
 
 # ─── done ─────────────────────────────────────────────────────────────
 echo ""
@@ -590,11 +617,15 @@ echo "════════════════════════�
 echo "  Setup complete!"
 echo ""
 echo "  Sessions:"
-echo "    vbox new <name>       Create a new session"
-echo "    vbox attach <name>    Attach to existing session"
-echo "    vbox ls               List all sessions"
-echo "    vbox kill <name>      Kill a session"
-echo "    vbox exit             Kill current session"
+echo "    vbox new <name>          Create a new session"
+echo "    vbox new --vibe <name>   Create a session with ambient vibe music"
+echo "    vbox attach <name>       Attach to existing session"
+echo "    vbox ls                  List all sessions"
+echo "    vbox kill <name>         Kill a session"
+echo "    vbox exit                Kill current session"
+echo ""
+echo "  Vibe music keys (Ctrl+t then …):"
+echo "    m  toggle mute     M  kill mpv     ]  louder vibe   [  chiller vibe"
 echo ""
 echo "  Tabs (Ctrl+t):          Panes (Ctrl+p):"
 echo "    n   new tab              d   split down"

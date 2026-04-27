@@ -161,9 +161,9 @@ cmd_start() {
     log "start: mpv/socat not installed; skipping"
     return 0
   fi
-  local sess
-  sess="$(_session_of)"
-  [ -n "$sess" ] || { log "start: no tmux session"; return 1; }
+  local target="${1:-}" sess
+  sess="$(_session_of "$target")"
+  [ -n "$sess" ] || { log "start: no tmux session ($target)"; return 1; }
 
   # already running for this session? bail out.
   local existing_a existing_b
@@ -200,6 +200,23 @@ cmd_start() {
   tmux_set "$sess" "@vibe-active-slot" "A"
   tmux_set "$sess" "@vibe-muted" "0"
 
+  # Cap status-right re-render to every 2s for this session (spec). Other
+  # sessions keep the main config's faster rate.
+  tmux set-option -t "$sess" status-interval 2 >/dev/null 2>&1 || true
+  # Populate the status-segment for this session — the main tmux.conf has
+  # #{@vibe-status-segment} as a placeholder. Setting it here means non-vibe
+  # sessions never invoke vbox-music tick at all.
+  tmux_set "$sess" "@vibe-status-segment" "#[fg=#cba6f7]#(vbox-music tick)#[default]  "
+
+  # Kick off the chill station on slot A immediately. Skipping the
+  # crossfade (nothing to fade from) means attach feels musical, not silent.
+  local default_url
+  default_url="$(_intensity_to_station "0.0" | awk -F '\t' '{print $1}')"
+  if [ -n "$default_url" ]; then
+    "$IPC_HELPER" "$sock_a" set_property volume 100
+    "$IPC_HELPER" "$sock_a" loadfile "$default_url" replace
+  fi
+
   # Kill our mpv processes when the session goes away. The PIDs are baked
   # into the hook command at registration time, so the hook still works
   # even if user options have already been torn down.
@@ -211,8 +228,8 @@ cmd_start() {
 }
 
 cmd_stop() {
-  local sess
-  sess="$(_session_of)"
+  local target="${1:-}" sess
+  sess="$(_session_of "$target")"
   [ -n "$sess" ] || return 0
   local slot pid sock
   for slot in a b; do
@@ -230,6 +247,9 @@ cmd_stop() {
   tmux_unset "$sess" "@vibe-active-slot"
   tmux_unset "$sess" "@vibe-current-pane"
   tmux_unset "$sess" "@vibe-muted"
+  tmux_unset "$sess" "@vibe-status-segment"
+  # restore session status-interval to inherit the global default
+  tmux set-option -t "$sess" -u status-interval >/dev/null 2>&1 || true
   log "stop: torn down mpv slots for session $sess"
 }
 
@@ -504,8 +524,8 @@ usage() {
   cat <<'USAGE'
 Usage: vbox-music <command> [args...]
 
-  start                 spawn mpv slot pair for the current session
-  stop                  kill mpv slot pair for the current session
+  start [target]        spawn mpv slot pair for the given (or current) session
+  stop  [target]        kill mpv slot pair for the given (or current) session
   crossfade <url>       crossfade active slot → inactive slot playing <url>
   focus <pane_id>       called by tmux pane-focus-in hook
   set-state <p> <s>     s ∈ {idle,running,thinking}
