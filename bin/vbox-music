@@ -165,18 +165,43 @@ _now_playing() {
   done
 }
 
-# 5-cell volume bar: floor(vol/20) filled cells, rest as ░.
-#   0%   ░░░░░     50%  ██░░░     100% █████
-#   25%  █░░░░     75%  ███░░
-_volume_bar() {
-  local vol="${1:-100}" filled empty bar=""
-  filled=$(( vol / 20 ))
-  [ "$filled" -gt 5 ] && filled=5
-  [ "$filled" -lt 0 ] && filled=0
+# 5-cell intensity bar — round(intensity * 5) filled cells, rest as ░.
+#   0.00  ░░░░░     0.40  ██░░░     1.00  █████
+#   0.20  █░░░░     0.60  ███░░     0.80  ████░
+_intensity_bar() {
+  local intensity="${1:-0}" filled empty bar=""
+  filled="$(awk -v i="$intensity" 'BEGIN{
+    n = int(i * 5 + 0.5)
+    if (n < 0) n = 0
+    if (n > 5) n = 5
+    print n
+  }')"
   empty=$(( 5 - filled ))
   while [ "$filled" -gt 0 ]; do bar="${bar}█"; filled=$((filled - 1)); done
   while [ "$empty"  -gt 0 ]; do bar="${bar}░"; empty=$((empty - 1));   done
   printf '%s' "$bar"
+}
+
+# Single-char volume glyph from a 7-step block-element ladder.
+#   ▂ ▃ ▄ ▅ ▆ ▇ █     (volume 0..100 mapped to indexes 0..6)
+_volume_glyph() {
+  local vol="${1:-100}" idx
+  case "$vol" in
+    ''|*[!0-9]*) idx=6 ;;
+    *) idx=$(( vol * 6 / 100 ))
+       [ "$idx" -lt 0 ] && idx=0
+       [ "$idx" -gt 6 ] && idx=6
+       ;;
+  esac
+  case "$idx" in
+    0) printf '▂' ;;
+    1) printf '▃' ;;
+    2) printf '▄' ;;
+    3) printf '▅' ;;
+    4) printf '▆' ;;
+    5) printf '▇' ;;
+    6) printf '█' ;;
+  esac
 }
 
 # Scrolling marquee: pads with a separator so the loop wraps cleanly,
@@ -794,32 +819,25 @@ cmd_tick() {
   [ -n "$pane" ] || pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null)"
   _refresh_pane_intensity "$pane"
 
-  local intensity intensity_2 tier_data level_label level_glyph override
+  local intensity intensity_bar override locked=""
   intensity="$(tmux_get_pane "$pane" "@vibe-intensity")"
   intensity="${intensity:-0}"
-  # Display 2 decimals — diagnostic at-a-glance, fits in the bar.
-  intensity_2="$(awk -v v="$intensity" 'BEGIN{printf "%.2f", v+0}')"
-  tier_data="$(_tier_for_intensity "$intensity")"
-  IFS=$'\t' read -r level_label level_glyph _ _ <<<"$tier_data"
-  # If vibes.conf is missing or has no matching range, render a neutral fallback.
-  [ -n "$level_glyph" ] || level_glyph='·'
-  [ -n "$level_label" ] || level_label='?'
+  intensity_bar="$(_intensity_bar "$intensity")"
 
   override="$(tmux_get_win "$pane" "@vibe-mood-override")"
-  local locked=""
   [ -n "$override" ] && locked=" [locked]"
 
-  local vol vol_bar
+  local vol vol_glyph
   vol="$(tmux_get "$sess" "@vibe-volume")"
   vol="${vol:-100}"
-  vol_bar="$(_volume_bar "$vol")"
+  vol_glyph="$(_volume_glyph "$vol")"
 
   local song marquee
   song="$(_now_playing "$active_sock")"
   # marquee position is per-window so each tab keeps its own scroll
   marquee="$(_marquee "$pane" "$song" 26)"
 
-  printf '%s %s %s %s%s ♫ %s' "$level_glyph" "$level_label" "$intensity_2" "$vol_bar" "$locked" "$marquee"
+  printf '%s %s%s ♫ %s' "$intensity_bar" "$vol_glyph" "$locked" "$marquee"
 }
 
 cmd_sync_attached() {

@@ -107,12 +107,13 @@ The `running …` counter is also per-tab — it resets when you create a new ta
 ### Status bar
 
 ```
-▂ LOOSE 0.00 █████ ♫ Distant Thunder — Foggy Path
-▄ RAISE 0.45 ███░░ ♫ Indie Anthem - Some Band
-▆ TENSE 0.85 █████ [locked] ♫ Rifftastic Rampage
+░░░░░ ▂ ♫ Distant Thunder — Foggy Path           # idle, low volume
+██░░░ ▅ ♫ Indie Anthem - Some Band               # mid intensity, half volume
+████░ █ [locked] ♫ Rifftastic Rampage            # high intensity, full volume, mood pinned
 ```
 
-The 5-cell volume bar fills in 20% steps: `░░░░░` 0% · `█░░░░` 25% · `██░░░` 50% · `███░░` 75% · `█████` 100%.
+- **Intensity** as a 5-cell bar — `░░░░░` 0.0 · `█░░░░` 0.2 · `██░░░` 0.4 · `███░░` 0.6 · `████░` 0.8 · `█████` 1.0.
+- **Volume** as a single block-element glyph from a 7-step ladder — `▂` (0–16%) · `▃` (17–32%) · `▄` (33–49%) · `▅` (50–66%) · `▆` (67–82%) · `▇` (83–99%) · `█` (100%).
 
 - Vibe levels are configurable in `~/.config/vibebox/vibes.conf` (see below). Defaults: `▂ LOOSE` (low) · `▄ RAISE` (mid) · `▆ TENSE` (high)
 - 26-char marquee that scrolls the current track (mpv ICY metadata, falling back to `media-title`)
