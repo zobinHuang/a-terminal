@@ -1,0 +1,36 @@
+#!/bin/sh
+# [vibebox] vbox-uptime — print the current tmux session's uptime as
+# "1d 2h 3m" / "2h 30m 15s" / "5m 12s". Called from status-right via
+# #(vbox-uptime).
+#
+# Why a helper? tmux's format parser does NOT expand #{...} substitutions
+# inside the contents of #(...), so the previous inline approach
+# (`C=#{session_created}; …`) ran with C set to the literal string
+# `#{session_created}`, bash arithmetic silently treated that as 0, and
+# the bar was stuck at "0m 0s" forever. Asking tmux back for the value
+# via `tmux display-message -p` works because we're already running
+# inside tmux's #() shell context.
+
+set -u
+
+created=$(tmux display-message -p '#{session_created}' 2>/dev/null)
+case "$created" in
+  ''|*[!0-9]*) printf '?'; exit 0 ;;
+esac
+
+now=$(date +%s)
+elapsed=$(( now - created ))
+[ "$elapsed" -lt 0 ] && elapsed=0
+
+d=$(( elapsed / 86400 ))
+h=$(( (elapsed % 86400) / 3600 ))
+m=$(( (elapsed % 3600) / 60 ))
+s=$(( elapsed % 60 ))
+
+if [ "$d" -gt 0 ]; then
+  printf '%dd %dh %dm' "$d" "$h" "$m"
+elif [ "$h" -gt 0 ]; then
+  printf '%dh %dm %ds' "$h" "$m" "$s"
+else
+  printf '%dm %ds' "$m" "$s"
+fi

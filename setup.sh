@@ -304,11 +304,14 @@ set -g status-position bottom
 set -g status-style "bg=#1e1e2e,fg=#cdd6f4"
 set -g status-left-length 45
 set -g status-left "#[bg=#cba6f7,fg=#1e1e2e,bold] VibeBox #[default] #[bg=#89b4fa,fg=#1e1e2e,bold] ◆ #S #[default] "
-set -g status-right-length 90
+set -g status-right-length 140
 # vbox-music tick is short-circuit-cheap (<5ms) when there's no @vibe-active-slot
 # on the session, so calling it unconditionally costs almost nothing for non-vibe
 # users — and avoids tmux's nested-format-expansion gotchas around #{@option}.
-set -g status-right "#[fg=#cba6f7]#(vbox-music tick 2>/dev/null)#[default] #[fg=#a6e3a1]running #(NOW=$(date +%%s); C=#{session_created}; E=$((NOW-C)); D=$((E/86400)); H=$(((E%%86400)/3600)); M=$(((E%%3600)/60)); S=$((E%%60)); [ $D -gt 0 ] && printf '%%dd %%dh %%dm' $D $H $M || { [ $H -gt 0 ] && printf '%%dh %%dm %%ds' $H $M $S || printf '%%dm %%ds' $M $S; }) #[fg=#a6adc8]│ %Y-%m-%d %H:%M "
+# When vibe is active, the tick output is roughly:
+#     🌿 cruising · Groove Salad ♫ <26-char scrolling song marquee>
+# which is why status-right-length is generous here.
+set -g status-right "#[fg=#cba6f7]#(vbox-music tick 2>/dev/null)#[default] #[fg=#a6e3a1]running #(vbox-uptime) #[fg=#a6adc8]│ %Y-%m-%d %H:%M "
 set -g status-interval 1
 setw -g window-status-format "#[fg=#a6adc8] #I:#W "
 setw -g window-status-current-format "#[bg=#45475a,fg=#89b4fa,bold] ▸ #I:#W "
@@ -413,9 +416,10 @@ mkdir -p "$VBOX_CFG_DIR" "$HOME/.local/bin" "$HOME/.cache/vibebox"
 
 # bin scripts — always overwrite so re-running setup.sh upgrades them
 if vbox_install_file bin/vbox-music     "$HOME/.local/bin/vbox-music" \
-   && vbox_install_file bin/vbox-mpv-ipc "$HOME/.local/bin/vbox-mpv-ipc"; then
-  chmod +x "$HOME/.local/bin/vbox-music" "$HOME/.local/bin/vbox-mpv-ipc"
-  info "Installed vbox-music + vbox-mpv-ipc"
+   && vbox_install_file bin/vbox-mpv-ipc "$HOME/.local/bin/vbox-mpv-ipc" \
+   && vbox_install_file bin/vbox-uptime  "$HOME/.local/bin/vbox-uptime"; then
+  chmod +x "$HOME/.local/bin/vbox-music" "$HOME/.local/bin/vbox-mpv-ipc" "$HOME/.local/bin/vbox-uptime"
+  info "Installed vbox-music + vbox-mpv-ipc + vbox-uptime"
 else
   err "Failed to install vbox-music scripts"
 fi

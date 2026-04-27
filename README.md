@@ -94,10 +94,26 @@ That adds a single `source ~/.config/vibebox/shell-hooks.sh` line to your `~/.ba
 |---|---|
 | `m` | Toggle global mute (fade current slot to 0 / restore) |
 | `M` | Kill mpv processes for this session (re-enable with `vbox new --vibe`) |
-| `]` | Bump intensity up one tier for 60s |
-| `[` | Bump intensity down one tier for 60s |
+| `]` | Cycle mood **up** (auto → chill → mellow → intense → auto) — sticky |
+| `[` | Cycle mood **down** (auto → intense → mellow → chill → auto) — sticky |
+| `a` | Release manual mood, return to auto |
 
-The status bar shows the current vibe: 🌿 chill, 🎷 mellow, 🔥 intense, 🔇 muted/offline.
+A 🔒 next to the tier label means the mood is pinned manually (use `Ctrl+t a` to release).
+
+### Status bar
+
+```
+🌿 cruising · Groove Salad ♫ Distant Thunder — Foggy Path
+^^^^^^^^^^^   ^^^^^^^^^^^^   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   tier        station        scrolling now-playing
+```
+
+- Tier emoji + vibe verb: 🌿 cruising / 🎷 grooving / 🔥 cooking
+- Station label from `~/.config/vibebox/stations.conf`
+- 26-char marquee that scrolls the current track (mpv ICY metadata, falling back to `media-title`)
+- 🔒 appears after the tier when you've pinned the mood manually
+- 🔇 muted when you've muted with `Ctrl+t m`
+- 📻 off-air if mpv died or the stream is unreachable
 
 ### Customizing stations
 

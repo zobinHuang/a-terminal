@@ -125,6 +125,61 @@ _intensity_to_station() {
   ' "$STATIONS_CONF"
 }
 
+# ─── mpv IPC read helper (for now-playing metadata) ────────────────
+# Sends a get_property_string request, reads one line of response,
+# extracts the "data" field. -T 0.3 caps the round-trip so a flaky mpv
+# can never block the status-bar render.
+_mpv_get() {
+  local sock="$1" prop="$2" raw value
+  [ -S "$sock" ] || return 0
+  raw="$(printf '{"command":["get_property_string","%s"]}\n' "$prop" \
+         | socat -T 0.3 - "UNIX-CONNECT:${sock}" 2>/dev/null \
+         | grep -m1 '"data"' || true)"
+  [ -n "$raw" ] || return 0
+  if command -v jq >/dev/null 2>&1; then
+    value="$(printf '%s' "$raw" | jq -r '.data // empty' 2>/dev/null)"
+  else
+    value="$(printf '%s' "$raw" | sed -n 's/.*"data":"\([^"]*\)".*/\1/p')"
+  fi
+  [ "$value" = "null" ] && value=""
+  printf '%s' "$value"
+}
+
+# Best-effort "what's playing right now" — ICY title for streams,
+# falling back to media-title (which is usually the URL for streams),
+# falling back to whatever mpv exposes as the file path stem.
+_now_playing() {
+  local sock="$1" t
+  for prop in metadata/by-key/icy-title media-title filename; do
+    t="$(_mpv_get "$sock" "$prop")"
+    if [ -n "$t" ] && [ "$t" != "null" ]; then
+      printf '%s' "$t"
+      return 0
+    fi
+  done
+}
+
+# Scrolling marquee: pads with a separator so the loop wraps cleanly,
+# advances one char per call. Position lives in @vibe-marquee-pos so
+# parallel tick calls in different sessions don't fight.
+_marquee() {
+  local sess="$1" text="$2" width="${3:-26}" pos pad len doubled
+  [ -n "$text" ] || text="—"
+  pad="$text   ✦   "
+  len=${#pad}
+  if [ "$len" -le "$width" ]; then
+    # short enough that scrolling looks dumb — just left-pad and stop
+    printf '%-*s' "$width" "$text"
+    return 0
+  fi
+  pos="$(tmux_get "$sess" "@vibe-marquee-pos")"
+  pos="${pos:-0}"
+  pos=$(( (pos + 1) % len ))
+  tmux_set "$sess" "@vibe-marquee-pos" "$pos"
+  doubled="${pad}${pad}"
+  printf '%s' "${doubled:$pos:$width}"
+}
+
 _intensity_tier() {
   awk -v i="${1:-0}" 'BEGIN{
     if (i+0 < 0.3)      print "chill"
@@ -404,9 +459,25 @@ cmd_crossfade() {
 # Re-derives intensity from state + load, applies any active manual bump,
 # updates @vibe-station, and triggers a crossfade if the focused pane's
 # station just changed.
+# Map a tier name to a representative intensity in the middle of that
+# range (used by the manual mood override).
+_tier_to_intensity() {
+  case "${1:-}" in
+    chill)   echo "0.150" ;;
+    mellow)  echo "0.450" ;;
+    intense) echo "0.850" ;;
+    *)       echo "" ;;
+  esac
+}
+
 _refresh_pane_intensity() {
   local pane="$1"
   [ -n "$pane" ] || return 0
+
+  local sess override forced_intensity
+  sess="$(_session_of "$pane")"
+  override="$(tmux_get "$sess" "@vibe-mood-override")"
+  forced_intensity="$(_tier_to_intensity "$override")"
 
   local state intensity
   state="$(tmux_get_pane "$pane" "@vibe-state")"
@@ -423,7 +494,10 @@ _refresh_pane_intensity() {
     bump_offset=""
   fi
 
-  if [ "$state" = "idle" ]; then
+  if [ -n "$forced_intensity" ]; then
+    # manual mood override wins over auto computation + bumps
+    intensity="$forced_intensity"
+  elif [ "$state" = "idle" ]; then
     intensity="0.000"
   else
     local pane_pid cpu_share mem_share
@@ -436,7 +510,7 @@ _refresh_pane_intensity() {
     }')"
   fi
 
-  if [ -n "$bump_offset" ]; then
+  if [ -z "$forced_intensity" ] && [ -n "$bump_offset" ]; then
     intensity="$(awk -v i="$intensity" -v o="$bump_offset" 'BEGIN{
       x = i + o
       if (x<0) x=0; if (x>1) x=1
@@ -446,15 +520,15 @@ _refresh_pane_intensity() {
 
   tmux_set_pane "$pane" "@vibe-intensity" "$intensity"
 
-  local url prev_url
-  url="$(_intensity_to_station "$intensity" | awk -F '\t' '{print $1}')"
+  local url label prev_url
+  IFS=$'\t' read -r url label <<<"$(_intensity_to_station "$intensity")"
   [ -z "$url" ] && return 0
   prev_url="$(tmux_get_pane "$pane" "@vibe-station")"
   tmux_set_pane "$pane" "@vibe-station" "$url"
+  tmux_set_pane "$pane" "@vibe-station-label" "${label:-}"
 
   # if this is the currently-focused pane and the station shifted, crossfade
-  local sess current_pane
-  sess="$(_session_of "$pane")"
+  local current_pane
   current_pane="$(tmux_get "$sess" "@vibe-current-pane")"
   if [ "$current_pane" = "$pane" ] && [ "$url" != "$prev_url" ]; then
     cmd_crossfade "$url" >/dev/null 2>&1 &
@@ -510,10 +584,12 @@ cmd_tick() {
 
   # network-unreachable / mpv-died sentinel: if the active slot's pid is gone,
   # render the offline indicator instead of pretending to play
-  local active_pid
-  active_pid="$(tmux_get "$sess" "@vibe-mpv-$(echo "$active_slot" | tr 'A-Z' 'a-z')-pid")"
+  local active_slot_lc active_pid active_sock
+  active_slot_lc="$(echo "$active_slot" | tr 'A-Z' 'a-z')"
+  active_pid="$(tmux_get  "$sess" "@vibe-mpv-${active_slot_lc}-pid")"
+  active_sock="$(tmux_get "$sess" "@vibe-mpv-${active_slot_lc}-sock")"
   if [ -n "$active_pid" ] && ! kill -0 "$active_pid" 2>/dev/null; then
-    printf '🔇 offline'
+    printf '📻 off-air'
     return 0
   fi
 
@@ -522,15 +598,31 @@ cmd_tick() {
   [ -n "$pane" ] || pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null)"
   _refresh_pane_intensity "$pane"
 
-  local intensity tier
+  local intensity tier override emoji_label
   intensity="$(tmux_get_pane "$pane" "@vibe-intensity")"
   intensity="${intensity:-0}"
   tier="$(_intensity_tier "$intensity")"
+  override="$(tmux_get "$sess" "@vibe-mood-override")"
   case "$tier" in
-    intense) printf '🔥 intense' ;;
-    mellow)  printf '🎷 mellow'  ;;
-    *)       printf '🌿 chill'   ;;
+    intense) emoji_label='🔥 cooking'  ;;
+    mellow)  emoji_label='🎷 grooving' ;;
+    *)       emoji_label='🌿 cruising' ;;
   esac
+  # a small lock icon when the user pinned the mood manually, so the
+  # status reflects "this is my choice, not the auto-picker"
+  [ -n "$override" ] && emoji_label="${emoji_label} 🔒"
+
+  local station song marquee out
+  station="$(tmux_get_pane "$pane" "@vibe-station-label")"
+  song="$(_now_playing "$active_sock")"
+  marquee="$(_marquee "$sess" "$song" 26)"
+
+  if [ -n "$station" ]; then
+    out="${emoji_label} · ${station} ♫ ${marquee}"
+  else
+    out="${emoji_label} ♫ ${marquee}"
+  fi
+  printf '%s' "$out"
 }
 
 cmd_sync_attached() {
@@ -605,6 +697,58 @@ cmd_bump() {
   _refresh_pane_intensity "$pane"
 }
 
+# Manual mood — sticky session-scoped override of the auto-derived tier.
+# Args: chill | mellow | intense | auto | next | prev
+cmd_mood() {
+  local arg="${1:-next}" sess pane cur next
+  sess="$(_session_of)"
+  [ -n "$sess" ] || return 0
+  pane="$(tmux_get "$sess" "@vibe-current-pane")"
+  [ -n "$pane" ] || pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null)"
+
+  cur="$(tmux_get "$sess" "@vibe-mood-override")"
+
+  case "$arg" in
+    auto|off|"")
+      tmux_unset "$sess" "@vibe-mood-override"
+      ;;
+    chill|mellow|intense)
+      tmux_set "$sess" "@vibe-mood-override" "$arg"
+      ;;
+    next)
+      case "${cur:-auto}" in
+        auto|"") next="chill" ;;
+        chill)   next="mellow" ;;
+        mellow)  next="intense" ;;
+        intense) next="auto" ;;
+      esac
+      if [ "$next" = "auto" ]; then
+        tmux_unset "$sess" "@vibe-mood-override"
+      else
+        tmux_set "$sess" "@vibe-mood-override" "$next"
+      fi
+      ;;
+    prev)
+      case "${cur:-auto}" in
+        auto|"") next="intense" ;;
+        intense) next="mellow" ;;
+        mellow)  next="chill" ;;
+        chill)   next="auto" ;;
+      esac
+      if [ "$next" = "auto" ]; then
+        tmux_unset "$sess" "@vibe-mood-override"
+      else
+        tmux_set "$sess" "@vibe-mood-override" "$next"
+      fi
+      ;;
+    *)
+      log "mood: unknown arg '$arg' (want chill|mellow|intense|auto|next|prev)"
+      return 1
+      ;;
+  esac
+  [ -n "$pane" ] && _refresh_pane_intensity "$pane"
+}
+
 # ─── main ────────────────────────────────────────────────────────────
 usage() {
   cat <<'USAGE'
@@ -617,9 +761,10 @@ Usage: vbox-music <command> [args...]
   crossfade <url>       crossfade active slot → inactive slot playing <url>
   focus <pane_id>       called by tmux pane-focus-in hook
   set-state <p> <s>     s ∈ {idle,running,thinking}
-  tick                  recompute focused pane intensity → station; emits emoji
+  tick                  status-bar render: emoji + station + scrolling song
   mute                  toggle global mute
   bump <delta>          shift intensity by <delta> for 60s (e.g. +0.25)
+  mood <m>              m ∈ {chill,mellow,intense,auto,next,prev} (sticky)
 USAGE
 }
 
@@ -634,6 +779,7 @@ case "$cmd" in
   tick)             cmd_tick  "$@" ;;
   mute)             cmd_mute  "$@" ;;
   bump)             cmd_bump  "$@" ;;
+  mood)             cmd_mood  "$@" ;;
   sync-attached)    cmd_sync_attached "$@" ;;
   cleanup-session)  cmd_cleanup_session "$@" ;;
   reap)             _reap_dead_sessions ;;
