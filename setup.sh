@@ -131,23 +131,13 @@ else
   fi
 fi
 
-# Nerd Font (required for yazi icons — not available via conda)
-if command -v brew &>/dev/null; then
-  if brew list --cask font-symbols-only-nerd-font &>/dev/null 2>&1; then
-    info "Nerd Font already installed"
-  else
-    warn "Installing Nerd Font …"
-    brew install --cask font-symbols-only-nerd-font
-    info "Nerd Font installed"
-  fi
-else
-  warn "Please install a Nerd Font manually: https://www.nerdfonts.com/"
-fi
+info "Using plain Unicode icons (no Nerd Font required)"
 
 # ─── patch yazi config ────────────────────────────────────────────────
 YAZI_DIR="$HOME/.config/yazi"
 YAZI_CONFIG="$YAZI_DIR/yazi.toml"
 YAZI_KEYMAP="$YAZI_DIR/keymap.toml"
+YAZI_THEME="$YAZI_DIR/theme.toml"
 
 mkdir -p "$YAZI_DIR"
 
@@ -185,6 +175,24 @@ desc = "Search file contents (grep via ripgrep)"
 run = "search --via=rg"
 TOML
 info "Patched keymap.toml"
+
+# Override yazi's bundled icon set so no Nerd Font is required. `·` is
+# U+00B7 (middle dot) and `▸` is U+25B8 (right-pointing triangle); both
+# are basic-Unicode and render in any monospace font.
+cat > "$YAZI_THEME" <<'TOML'
+# [vibebox] no-Nerd-Font icon override
+[icon]
+files = [
+  { name = "*", text = "·" },
+]
+dirs = [
+  { name = "*", text = "▸" },
+]
+exts  = []
+globs = []
+conds = []
+TOML
+info "Patched theme.toml (plain icons, no Nerd Font)"
 
 # ─── 2b. mpv + socat (vibe music engine) ─────────────────────────────
 echo ""
