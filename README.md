@@ -107,13 +107,20 @@ The `running …` counter is also per-tab — it resets when you create a new ta
 ### Status bar
 
 ```
-░░░░░ ▂ ♫ Distant Thunder — Foggy Path           # idle, low volume
-██░░░ ▅ ♫ Indie Anthem - Some Band               # mid intensity, half volume
-████░ █ [locked] ♫ Rifftastic Rampage            # high intensity, full volume, mood pinned
+· ▂ ♫ Distant Thunder — Foggy Path        # idle pane, low volume
+✦ ▅ ♫ Indie Anthem - Some Band            # mid intensity, ~half volume
+✺ █ [locked] ♫ Rifftastic Rampage         # peak intensity, full volume, mood pinned
 ```
 
-- **Intensity** as a 5-cell bar — `░░░░░` 0.0 · `█░░░░` 0.2 · `██░░░` 0.4 · `███░░` 0.6 · `████░` 0.8 · `█████` 1.0.
-- **Volume** as a single block-element glyph from a 7-step ladder — `▂` (0–16%) · `▃` (17–32%) · `▄` (33–49%) · `▅` (50–66%) · `▆` (67–82%) · `▇` (83–99%) · `█` (100%).
+- **Intensity** is a single character that pulses each tick between two glyphs. Five levels, scaling with intensity 0.0–1.0:
+  - level 1 (0.0–0.2): `· • · • …`
+  - level 2 (0.2–0.4): `• ✦ • ✦ …`
+  - level 3 (0.4–0.6): `✦ ✸ ✦ ✸ …`
+  - level 4 (0.6–0.8): `✸ ✹ ✸ ✹ …`
+  - level 5 (0.8–1.0): `✹ ✺ ✹ ✺ …`
+
+  The character is hardcoded — not configurable from `vibes.conf`.
+- **Volume** is one block-element glyph from a 7-step ladder — `▂` (0–16%) · `▃` (17–32%) · `▄` (33–49%) · `▅` (50–66%) · `▆` (67–82%) · `▇` (83–99%) · `█` (100%).
 
 - Vibe levels are configurable in `~/.config/vibebox/vibes.conf` (see below). Defaults: `▂ LOOSE` (low) · `▄ RAISE` (mid) · `▆ TENSE` (high)
 - 26-char marquee that scrolls the current track (mpv ICY metadata, falling back to `media-title`)

@@ -165,21 +165,37 @@ _now_playing() {
   done
 }
 
-# 5-cell intensity bar — round(intensity * 5) filled cells, rest as ░.
-#   0.00  ░░░░░     0.40  ██░░░     1.00  █████
-#   0.20  █░░░░     0.60  ███░░     0.80  ████░
-_intensity_bar() {
-  local intensity="${1:-0}" filled empty bar=""
-  filled="$(awk -v i="$intensity" 'BEGIN{
-    n = int(i * 5 + 0.5)
-    if (n < 0) n = 0
+# Intensity is rendered as a single character that alternates between
+# two glyphs each tick — gives a "looping pulse" feel that scales with
+# tier. Hardcoded; vibes.conf only defines thresholds + labels now.
+#
+#   level 1 (idle):    · / •     level 4:           ✸ / ✹
+#   level 2:           • / ✦     level 5 (peak):    ✹ / ✺
+#   level 3:           ✦ / ✸
+#
+# Adjacent levels share a glyph so the rise from one tier to the next
+# feels like a continuous escalation rather than a jump.
+_intensity_glyph() {
+  local intensity="${1:-0}" level frame
+  level="$(awk -v i="$intensity" 'BEGIN{
+    n = int(i * 5) + 1
+    if (n < 1) n = 1
     if (n > 5) n = 5
     print n
   }')"
-  empty=$(( 5 - filled ))
-  while [ "$filled" -gt 0 ]; do bar="${bar}█"; filled=$((filled - 1)); done
-  while [ "$empty"  -gt 0 ]; do bar="${bar}░"; empty=$((empty - 1));   done
-  printf '%s' "$bar"
+  frame=$(( $(date +%s) % 2 ))
+  case "${level}.${frame}" in
+    1.0) printf '·' ;;
+    1.1) printf '•' ;;
+    2.0) printf '•' ;;
+    2.1) printf '✦' ;;
+    3.0) printf '✦' ;;
+    3.1) printf '✸' ;;
+    4.0) printf '✸' ;;
+    4.1) printf '✹' ;;
+    5.0) printf '✹' ;;
+    5.1) printf '✺' ;;
+  esac
 }
 
 # Single-char volume glyph from a 7-step block-element ladder.
@@ -819,10 +835,10 @@ cmd_tick() {
   [ -n "$pane" ] || pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null)"
   _refresh_pane_intensity "$pane"
 
-  local intensity intensity_bar override locked=""
+  local intensity intensity_g override locked=""
   intensity="$(tmux_get_pane "$pane" "@vibe-intensity")"
   intensity="${intensity:-0}"
-  intensity_bar="$(_intensity_bar "$intensity")"
+  intensity_g="$(_intensity_glyph "$intensity")"
 
   override="$(tmux_get_win "$pane" "@vibe-mood-override")"
   [ -n "$override" ] && locked=" [locked]"
@@ -837,7 +853,7 @@ cmd_tick() {
   # marquee position is per-window so each tab keeps its own scroll
   marquee="$(_marquee "$pane" "$song" 26)"
 
-  printf '%s %s%s ♫ %s' "$intensity_bar" "$vol_glyph" "$locked" "$marquee"
+  printf '%s %s%s ♫ %s' "$intensity_g" "$vol_glyph" "$locked" "$marquee"
 }
 
 cmd_sync_attached() {
