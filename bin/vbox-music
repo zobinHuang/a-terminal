@@ -343,6 +343,7 @@ cmd_stop() {
   tmux_unset "$sess" "@vibe-active-slot"
   tmux_unset "$sess" "@vibe-current-pane"
   tmux_unset "$sess" "@vibe-muted"
+  tmux_unset "$sess" "@vibe-pending-url"
   # remove stashed cleanup state
   sess_clean="${sess#\$}"
   rm -f "${VBOX_RUNTIME_DIR}/sess-${sess_clean}.state"
@@ -436,8 +437,13 @@ cmd_crossfade() {
   local holder=""
   [ -f "$lock_file" ] && holder="$(cat "$lock_file" 2>/dev/null)"
   if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
-    # holder still alive — actually conflicting, no-op
-    log "crossfade: skipped (active holder pid=$holder)"
+    # An older crossfade is still fading. Don't fight it — record the
+    # most-recent desired target in a session option so that crossfade
+    # chases it when it finishes. Rapid tab switches thus collapse to
+    # "end up on the latest tab's station" instead of being stuck on
+    # whatever the first switch happened to target.
+    tmux_set "$sess" "@vibe-pending-url" "$target_url"
+    log "crossfade: queued (active holder=$holder, pending=$target_url)"
     return 0
   fi
   echo "$$" > "$lock_file" 2>/dev/null || true
@@ -516,8 +522,23 @@ cmd_crossfade() {
   tmux_set "$sess" "@vibe-active-slot" "$to_slot"
   log "crossfade: END ${from_slot}->${to_slot} ${target_url}"
 
+  # Release the lock BEFORE checking for a queued target, so the recursive
+  # call (or any concurrent caller racing in) can acquire the lock cleanly.
   rm -f "$lock_file" 2>/dev/null
   trap - EXIT
+
+  # Did anything queue a newer target while we were fading? If so, chase
+  # it. Several rapid switches collapse via tail recursion: only the most
+  # recent one wins because each new deferral overwrites the option.
+  local pending
+  pending="$(tmux_get "$sess" "@vibe-pending-url")"
+  if [ -n "$pending" ]; then
+    tmux_unset "$sess" "@vibe-pending-url"
+    if [ "$pending" != "$target_url" ]; then
+      log "crossfade: chasing queued target ${pending}"
+      cmd_crossfade "$pending" "$target"
+    fi
+  fi
 }
 
 # ─── per-pane intensity refresh ──────────────────────────────────────
