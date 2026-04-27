@@ -346,10 +346,11 @@ set -g renumber-windows on
 # ─── status bar (tab bar) ────────────────────────────────────────────
 set -g status-position bottom
 set -g status-style "bg=#1e1e2e,fg=#cdd6f4"
-set -g status-left-length 60
-# A bright yellow [PASSTHRU] block appears when F12 has switched the
-# active key-table to "off" (nested-tmux passthrough mode).
-set -g status-left "#[bg=#cba6f7,fg=#1e1e2e,bold] VibeBox #[default] #[bg=#89b4fa,fg=#1e1e2e,bold] ◆ #S #[default]#{?#{==:#{client_key_table},off}, #[bg=#f9e2af#,fg=#1e1e2e#,bold] PASSTHRU #[default],} "
+set -g status-left-length 80
+# `#h` is tmux's short hostname (no domain). A bright yellow [PASSTHRU]
+# block appears when F12 has switched the active key-table to "off"
+# (nested-tmux passthrough mode).
+set -g status-left "#[bg=#cba6f7,fg=#1e1e2e,bold] VibeBox [#h] #[default] #[bg=#89b4fa,fg=#1e1e2e,bold] ◆ #S #[default]#{?#{==:#{client_key_table},off}, #[bg=#f9e2af#,fg=#1e1e2e#,bold] PASSTHRU #[default],} "
 set -g status-right-length 140
 # vbox-music tick is short-circuit-cheap (<5ms) when there's no @vibe-active-slot
 # on the session, so calling it unconditionally costs almost nothing for non-vibe
