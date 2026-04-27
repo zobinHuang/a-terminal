@@ -201,12 +201,10 @@ cmd_start() {
   tmux_set "$sess" "@vibe-muted" "0"
 
   # Cap status-right re-render to every 2s for this session (spec). Other
-  # sessions keep the main config's faster rate.
+  # sessions keep the main config's faster rate. status-right itself calls
+  # `#(vbox-music tick)` directly (defined in main .tmux.conf), so no
+  # per-session segment plumbing needed here.
   tmux set-option -t "$sess" status-interval 2 >/dev/null 2>&1 || true
-  # Populate the status-segment for this session — the main tmux.conf has
-  # #{@vibe-status-segment} as a placeholder. Setting it here means non-vibe
-  # sessions never invoke vbox-music tick at all.
-  tmux_set "$sess" "@vibe-status-segment" "#[fg=#cba6f7]#(vbox-music tick)#[default]  "
 
   # Kick off the chill station on slot A immediately. Skipping the
   # crossfade (nothing to fade from) means attach feels musical, not silent.
@@ -251,7 +249,6 @@ cmd_stop() {
   tmux_unset "$sess" "@vibe-active-slot"
   tmux_unset "$sess" "@vibe-current-pane"
   tmux_unset "$sess" "@vibe-muted"
-  tmux_unset "$sess" "@vibe-status-segment"
   # restore session status-interval to inherit the global default
   tmux set-option -t "$sess" -u status-interval >/dev/null 2>&1 || true
   log "stop: torn down mpv slots for session $sess"
