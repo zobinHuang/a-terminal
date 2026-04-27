@@ -441,7 +441,11 @@ cmd_crossfade() {
     return 0
   fi
   echo "$$" > "$lock_file" 2>/dev/null || true
-  trap 'rm -f "$lock_file" 2>/dev/null; trap - EXIT' EXIT
+  # Double-quoted: $lock_file expands NOW, at trap-set time, so the trap
+  # body has the literal path baked in. With single quotes the trap would
+  # try to expand a function-local `$lock_file` at fire time, which is
+  # gone if set -u kills us mid-function — second-order error.
+  trap "rm -f '$lock_file' 2>/dev/null; trap - EXIT" EXIT
 
   local from_slot to_slot from_sock to_sock
   if [ "$active_slot" = "A" ]; then
@@ -458,7 +462,10 @@ cmd_crossfade() {
     trap - EXIT
     return 0
   fi
-  log "crossfade: BEGIN $from_slot→$to_slot url=$target_url sess=$sess"
+  # Use ASCII arrow + braces — bash 3.2 (macOS default) consumes the
+  # first UTF-8 byte of `→` into the preceding variable name and aborts
+  # under set -u with `from_slot\xe2: unbound variable`.
+  log "crossfade: BEGIN ${from_slot}->${to_slot} url=${target_url} sess=${sess}"
 
   # CRITICAL: mpv's `pause` property is sticky across files. If anything
   # paused this slot earlier (sync-attached on detach, an old crossfade,
@@ -507,7 +514,7 @@ cmd_crossfade() {
   "$IPC_HELPER" "$from_sock" stop
 
   tmux_set "$sess" "@vibe-active-slot" "$to_slot"
-  log "crossfade: END $from_slot→$to_slot $target_url"
+  log "crossfade: END ${from_slot}->${to_slot} ${target_url}"
 
   rm -f "$lock_file" 2>/dev/null
   trap - EXIT
