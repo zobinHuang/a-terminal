@@ -176,11 +176,55 @@ run = "search --via=rg"
 TOML
 info "Patched keymap.toml"
 
-# Override yazi's bundled icon set so no Nerd Font is required. `·` is
-# U+00B7 (middle dot) and `▸` is U+25B8 (right-pointing triangle); both
-# are basic-Unicode and render in any monospace font.
+# Strip all Nerd-Font codepoints from yazi's bundled theme. The default
+# theme uses powerline arrows in [status] separators, plus per-language
+# glyphs in [icon] — both render as ?-boxes without a Nerd Font.
+# Colors here use ANSI names so the terminal's own palette drives them
+# instead of yazi's hex defaults (which often clash with terminal themes).
 cat > "$YAZI_THEME" <<'TOML'
-# [vibebox] no-Nerd-Font icon override
+# [vibebox] no-Nerd-Font icon + theme override
+
+[manager]
+cwd             = { fg = "cyan" }
+hovered         = { reversed = true }
+preview_hovered = { underline = true }
+find_keyword    = { fg = "yellow", italic = true }
+find_position   = { fg = "magenta", bg = "reset", italic = true }
+marker_copied   = { fg = "green",  bg = "green" }
+marker_cut      = { fg = "red",    bg = "red" }
+marker_marked   = { fg = "blue",   bg = "blue" }
+marker_selected = { fg = "yellow", bg = "yellow" }
+tab_active      = { reversed = true }
+tab_inactive    = {}
+tab_width       = 1
+count_copied    = { fg = "white", bg = "green" }
+count_cut       = { fg = "white", bg = "red" }
+count_selected  = { fg = "white", bg = "blue" }
+border_symbol   = "│"
+border_style    = { fg = "gray" }
+
+[mode]
+normal_main = { fg = "black", bg = "blue",    bold = true }
+normal_alt  = { fg = "blue",  bg = "darkgray" }
+select_main = { fg = "black", bg = "yellow",  bold = true }
+select_alt  = { fg = "yellow", bg = "darkgray" }
+unset_main  = { fg = "black", bg = "magenta", bold = true }
+unset_alt   = { fg = "magenta", bg = "darkgray" }
+
+[status]
+# Empty separators avoid powerline arrows entirely.
+separator_open  = ""
+separator_close = ""
+separator_style = { fg = "darkgray", bg = "darkgray" }
+
+[which]
+mask = { bg = "black" }
+cand = { fg = "cyan" }
+rest = { fg = "darkgray" }
+desc = { fg = "magenta" }
+separator       = "  "
+separator_style = { fg = "darkgray" }
+
 [icon]
 files = [
   { name = "*", text = "·" },
@@ -192,7 +236,7 @@ exts  = []
 globs = []
 conds = []
 TOML
-info "Patched theme.toml (plain icons, no Nerd Font)"
+info "Patched theme.toml (plain icons + ANSI palette, no Nerd Font)"
 
 # ─── 2b. mpv + socat (vibe music engine) ─────────────────────────────
 echo ""
