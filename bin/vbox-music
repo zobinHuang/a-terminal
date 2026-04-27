@@ -265,6 +265,11 @@ cmd_start() {
   tmux_set "$sess" "@vibe-active-slot" "A"
   tmux_set "$sess" "@vibe-muted" "0"
 
+  # Wipe any stale crossfade locks. We just spawned mpv, so by definition
+  # no crossfade is in flight — any leftover lock dir is from a previous
+  # tmux server's run that crashed without firing its EXIT trap.
+  rm -rf /tmp/vbox-crossfade-*.lock 2>/dev/null || true
+
   # Stamp creation time on every window in this session that doesn't
   # already have one — covers the initial window of a brand-new session
   # (after-new-session may not fire reliably on older tmux) and any
@@ -421,6 +426,21 @@ cmd_crossfade() {
   tpid="$(_tmux_pid)"
   : "${tpid:=$$}"  # fallback so we still get a unique-enough lock path
   local lock_dir="/tmp/vbox-crossfade-${tpid}.lock"
+  # Auto-heal a stale lock: a crossfade that's been "in progress" for
+  # more than 5s (when the max fade is ~3s) is dead — its owner crashed,
+  # got SIGKILLed, or the trap didn't fire for some reason. Without this,
+  # ONE leaked lock silently disables every future crossfade for the
+  # life of the tmux server.
+  if [ -d "$lock_dir" ]; then
+    local now_t lock_mt age
+    now_t="$(date +%s)"
+    lock_mt="$(stat -f %m "$lock_dir" 2>/dev/null || stat -c %Y "$lock_dir" 2>/dev/null || echo "$now_t")"
+    age=$(( now_t - lock_mt ))
+    if [ "$age" -gt 5 ]; then
+      log "crossfade: force-removing stale lock (age=${age}s)"
+      rmdir "$lock_dir" 2>/dev/null || rm -rf "$lock_dir" 2>/dev/null || true
+    fi
+  fi
   if ! mkdir "$lock_dir" 2>/dev/null; then
     log "crossfade: skipped (lock held at $lock_dir)"
     return 0
