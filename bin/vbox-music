@@ -318,6 +318,9 @@ cmd_start() {
   if [ -n "$default_url" ]; then
     "$IPC_HELPER" "$sock_a" set_property volume 100
     "$IPC_HELPER" "$sock_a" loadfile "$default_url" replace
+    # Seed @vibe-current-url so subsequent crossfades to the same URL
+    # short-circuit cleanly (e.g., the first focus event after attach).
+    tmux_set "$sess" "@vibe-current-url" "$default_url"
   fi
 
   # Begin paused if no client is attached yet (vbox CLI calls start before
@@ -357,6 +360,7 @@ cmd_stop() {
   done
   tmux_unset "$sess" "@vibe-active-slot"
   tmux_unset "$sess" "@vibe-current-pane"
+  tmux_unset "$sess" "@vibe-current-url"
   tmux_unset "$sess" "@vibe-muted"
   tmux_unset "$sess" "@vibe-pending-url"
   # remove stashed cleanup state
@@ -435,6 +439,18 @@ cmd_crossfade() {
   active_slot="$(tmux_get "$sess" "@vibe-active-slot")"
   [ -n "$active_slot" ] || { log "crossfade: no active slot for $sess"; return 0; }
 
+  # Idempotent: if the audible URL is already what the caller asked for,
+  # do nothing. This covers (a) mood toggles where the new tier resolves
+  # to the same station as the current one (e.g., locking LOOSE on an
+  # idle pane that's already playing LOOSE) and (b) tab switches between
+  # tabs whose state happens to map to the same station.
+  local current_url
+  current_url="$(tmux_get "$sess" "@vibe-current-url")"
+  if [ -n "$current_url" ] && [ "$current_url" = "$target_url" ]; then
+    log "crossfade: noop (already playing $target_url)"
+    return 0
+  fi
+
   local muted
   muted="$(tmux_get "$sess" "@vibe-muted")"
 
@@ -507,7 +523,8 @@ cmd_crossfade() {
   if [ "$muted" = "1" ]; then
     "$IPC_HELPER" "$from_sock" stop
     tmux_set "$sess" "@vibe-active-slot" "$to_slot"
-    log "crossfade: silent swap → $target_url (muted)"
+    tmux_set "$sess" "@vibe-current-url"  "$target_url"
+    log "crossfade: silent swap (muted) ${target_url}"
     rm -f "$lock_file" 2>/dev/null
     trap - EXIT
     return 0
@@ -535,6 +552,7 @@ cmd_crossfade() {
   "$IPC_HELPER" "$from_sock" stop
 
   tmux_set "$sess" "@vibe-active-slot" "$to_slot"
+  tmux_set "$sess" "@vibe-current-url"  "$target_url"
   log "crossfade: END ${from_slot}->${to_slot} ${target_url}"
 
   # Release the lock BEFORE checking for a queued target, so the recursive
@@ -890,9 +908,10 @@ cmd_mood() {
       ;;
   esac
   _refresh_pane_intensity "$pane"
-  # Force a crossfade unconditionally — the user just pressed a mood key
-  # and expects to hear the change, even if the new tier maps to the same
-  # station as before (which happens when going auto -> LOOSE on an idle pane).
+  # Trigger a crossfade attempt — cmd_crossfade is now idempotent against
+  # @vibe-current-url, so locking onto the tier that's already playing
+  # (e.g., auto -> LOOSE on an idle pane) is a silent no-op. Only an
+  # actual URL change produces an audible fade.
   local url
   url="$(tmux_get_pane "$pane" "@vibe-station")"
   [ -n "$url" ] && cmd_crossfade "$url" "$pane" >/dev/null 2>&1 &
@@ -912,7 +931,8 @@ cmd_diag() {
   if [ -n "$sess" ]; then
     echo ""
     echo "session options:"
-    for opt in "@vibe-active-slot" "@vibe-current-pane" "@vibe-muted" \
+    for opt in "@vibe-active-slot" "@vibe-current-pane" "@vibe-current-url" \
+               "@vibe-muted" "@vibe-pending-url" \
                "@vibe-mpv-a-sock" "@vibe-mpv-b-sock" \
                "@vibe-mpv-a-pid" "@vibe-mpv-b-pid"; do
       printf "  %-22s = %s\n" "$opt" "$(tmux_get "$sess" "$opt")"
