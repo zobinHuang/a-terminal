@@ -62,9 +62,33 @@ install_native() {
 VBOX_REPO_API="https://api.github.com/repos/zobinHuang/vibebox/contents"
 vbox_fetch() {
   # vbox_fetch <repo-path> <local-dest>
-  local src="$1" dest="$2"
-  curl -fsSL -H 'Accept: application/vnd.github.v3.raw' \
-    "${VBOX_REPO_API}/${src}" -o "$dest" 2>/dev/null
+  # On failure, captures curl's stderr + http status into the global
+  # VBOX_FETCH_ERR so the caller can surface it to the user.
+  local src="$1" dest="$2" curl_err http_code curl_rc
+  VBOX_FETCH_ERR=""
+  curl_err="$(mktemp)"
+  http_code="$(curl -sSL -w '%{http_code}' \
+                -H 'Accept: application/vnd.github.v3.raw' \
+                "${VBOX_REPO_API}/${src}" \
+                -o "$dest" 2>"$curl_err")"
+  curl_rc=$?
+  if [ "$curl_rc" -ne 0 ]; then
+    VBOX_FETCH_ERR="curl exit=$curl_rc: $(tr '\n' ' ' <"$curl_err")"
+    rm -f "$curl_err"
+    return 1
+  fi
+  rm -f "$curl_err"
+  case "$http_code" in
+    2??) return 0 ;;
+    *)
+      # On non-2xx the body was written to $dest — peek at it for the
+      # actual GitHub error (rate-limit, 404, etc). Truncate so we don't
+      # spam the terminal with a full HTML page.
+      VBOX_FETCH_ERR="HTTP $http_code from ${VBOX_REPO_API}/${src} — $(head -c 200 "$dest" 2>/dev/null | tr '\n' ' ')"
+      rm -f "$dest"
+      return 1
+      ;;
+  esac
 }
 
 # When running `bash setup.sh` from a clone, prefer the local file. When
@@ -75,14 +99,25 @@ if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
   VBOX_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
 fi
 VBOX_CFG_DIR="$HOME/.config/vibebox"
+VBOX_INSTALL_ERR=""
+
 vbox_install_file() {
   # vbox_install_file <repo-path> <dest>
+  # On failure, sets VBOX_INSTALL_ERR with a human-readable reason.
   local src="$1" dest="$2"
+  VBOX_INSTALL_ERR=""
   if [ -n "$VBOX_SCRIPT_DIR" ] && [ -f "$VBOX_SCRIPT_DIR/$src" ]; then
-    cp "$VBOX_SCRIPT_DIR/$src" "$dest"
-  else
-    vbox_fetch "$src" "$dest" || return 1
+    if ! cp "$VBOX_SCRIPT_DIR/$src" "$dest" 2>/dev/null; then
+      VBOX_INSTALL_ERR="cp $VBOX_SCRIPT_DIR/$src -> $dest failed"
+      return 1
+    fi
+    return 0
   fi
+  if vbox_fetch "$src" "$dest"; then
+    return 0
+  fi
+  VBOX_INSTALL_ERR="$VBOX_FETCH_ERR"
+  return 1
 }
 
 # ──────────────────────────────────────────────────────────────────────
@@ -415,37 +450,38 @@ echo "── vbox-music (vibe music) ──────────────�
 mkdir -p "$VBOX_CFG_DIR" "$HOME/.local/bin" "$HOME/.cache/vibebox"
 
 # bin scripts — always overwrite so re-running setup.sh upgrades them
-if vbox_install_file bin/vbox-music     "$HOME/.local/bin/vbox-music" \
-   && vbox_install_file bin/vbox-mpv-ipc "$HOME/.local/bin/vbox-mpv-ipc" \
-   && vbox_install_file bin/vbox-uptime  "$HOME/.local/bin/vbox-uptime"; then
+_vbox_install_or_fail() {
+  # _vbox_install_or_fail <repo-path> <dest> <label>
+  if vbox_install_file "$1" "$2"; then
+    return 0
+  fi
+  err "Failed to install $3 — ${VBOX_INSTALL_ERR:-<no error captured>}"
+  return 1
+}
+
+if _vbox_install_or_fail bin/vbox-music     "$HOME/.local/bin/vbox-music"     "vbox-music" \
+   && _vbox_install_or_fail bin/vbox-mpv-ipc "$HOME/.local/bin/vbox-mpv-ipc" "vbox-mpv-ipc" \
+   && _vbox_install_or_fail bin/vbox-uptime  "$HOME/.local/bin/vbox-uptime"  "vbox-uptime"; then
   chmod +x "$HOME/.local/bin/vbox-music" "$HOME/.local/bin/vbox-mpv-ipc" "$HOME/.local/bin/vbox-uptime"
   info "Installed vbox-music + vbox-mpv-ipc + vbox-uptime"
-else
-  err "Failed to install vbox-music scripts"
 fi
 
 # tmux-vibe.conf — always overwrite (sourced by main .tmux.conf)
-if vbox_install_file config/tmux-vibe.conf "$VBOX_CFG_DIR/tmux-vibe.conf"; then
+if _vbox_install_or_fail config/tmux-vibe.conf "$VBOX_CFG_DIR/tmux-vibe.conf" "tmux-vibe.conf"; then
   info "Installed tmux-vibe.conf"
-else
-  err "Failed to install tmux-vibe.conf"
 fi
 
 # shell-hooks.sh — installed always; rc source line only when VBOX_VIBE=1
-if vbox_install_file config/shell-hooks.sh "$VBOX_CFG_DIR/shell-hooks.sh"; then
+if _vbox_install_or_fail config/shell-hooks.sh "$VBOX_CFG_DIR/shell-hooks.sh" "shell-hooks.sh"; then
   info "Installed shell-hooks.sh"
-else
-  err "Failed to install shell-hooks.sh"
 fi
 
 # stations.conf — preserve user customizations on re-install
 if [ -f "$VBOX_CFG_DIR/stations.conf" ]; then
   info "stations.conf already exists (preserving user edits)"
 else
-  if vbox_install_file config/stations.conf "$VBOX_CFG_DIR/stations.conf"; then
+  if _vbox_install_or_fail config/stations.conf "$VBOX_CFG_DIR/stations.conf" "stations.conf"; then
     info "Installed default stations.conf"
-  else
-    err "Failed to install stations.conf"
   fi
 fi
 
