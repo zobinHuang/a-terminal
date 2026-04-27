@@ -58,33 +58,10 @@ install_native() {
   fi
 }
 
-# ─── fetch repo files: tarball-first, API fallback ──────────────────
-# api.github.com is rate-limited to 60 requests/hour for unauthenticated
-# clients, which is easy to trip when re-running setup.sh repeatedly with
-# 5+ files per run. codeload.github.com (where /archive redirects) has
-# no such limit, so we grab one tarball up front and serve every file
-# from a local extract.
+# ─── fetch a file from this repo's raw API (avoids CDN cache) ────────
 VBOX_REPO_API="https://api.github.com/repos/zobinHuang/vibebox/contents"
-VBOX_REPO_TARBALL="https://github.com/zobinHuang/vibebox/archive/refs/heads/main.tar.gz"
-VBOX_EXTRACT_DIR=""
-VBOX_EXTRACT_ROOT=""
-
-vbox_ensure_tarball() {
-  # only download once per setup.sh run
-  [ -n "$VBOX_EXTRACT_ROOT" ] && [ -d "$VBOX_EXTRACT_ROOT" ] && return 0
-  VBOX_EXTRACT_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t vibebox)"
-  if ! curl -fsSL "$VBOX_REPO_TARBALL" -o "$VBOX_EXTRACT_DIR/repo.tar.gz" 2>/dev/null; then
-    return 1
-  fi
-  if ! tar -xzf "$VBOX_EXTRACT_DIR/repo.tar.gz" -C "$VBOX_EXTRACT_DIR" 2>/dev/null; then
-    return 1
-  fi
-  VBOX_EXTRACT_ROOT="$(find "$VBOX_EXTRACT_DIR" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -1)"
-  [ -n "$VBOX_EXTRACT_ROOT" ] && [ -d "$VBOX_EXTRACT_ROOT" ]
-}
-
 vbox_fetch() {
-  # vbox_fetch <repo-path> <local-dest> — last-resort per-file API call
+  # vbox_fetch <repo-path> <local-dest>
   local src="$1" dest="$2"
   curl -fsSL -H 'Accept: application/vnd.github.v3.raw' \
     "${VBOX_REPO_API}/${src}" -o "$dest" 2>/dev/null
@@ -92,32 +69,21 @@ vbox_fetch() {
 
 # When running `bash setup.sh` from a clone, prefer the local file. When
 # running via `curl|bash`, BASH_SOURCE points to /dev/fd/N or main and the
-# sibling check fails, so we fall back to the tarball, then per-file API.
+# sibling check fails, so we fall back to fetching from GitHub.
 VBOX_SCRIPT_DIR=""
 if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
   VBOX_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
 fi
 VBOX_CFG_DIR="$HOME/.config/vibebox"
-
 vbox_install_file() {
   # vbox_install_file <repo-path> <dest>
   local src="$1" dest="$2"
   if [ -n "$VBOX_SCRIPT_DIR" ] && [ -f "$VBOX_SCRIPT_DIR/$src" ]; then
     cp "$VBOX_SCRIPT_DIR/$src" "$dest"
-    return 0
+  else
+    vbox_fetch "$src" "$dest" || return 1
   fi
-  if vbox_ensure_tarball && [ -f "$VBOX_EXTRACT_ROOT/$src" ]; then
-    cp "$VBOX_EXTRACT_ROOT/$src" "$dest"
-    return 0
-  fi
-  if vbox_fetch "$src" "$dest"; then
-    return 0
-  fi
-  return 1
 }
-
-# Clean up the extracted tarball when the script exits (success or not).
-trap '[ -n "$VBOX_EXTRACT_DIR" ] && rm -rf "$VBOX_EXTRACT_DIR" 2>/dev/null' EXIT
 
 # ──────────────────────────────────────────────────────────────────────
 COMMIT_HASH="$(curl -fsSL https://api.github.com/repos/zobinHuang/vibebox/commits/main 2>/dev/null | grep -m1 '"sha"' | cut -d'"' -f4 | cut -c1-7)" || true
