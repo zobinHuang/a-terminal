@@ -32,6 +32,27 @@ vbox_bin() {
   echo "${CONDA_PREFIX}/bin/$1"
 }
 
+# ─── install via native package manager (brew on macOS, apt on Linux) ─
+install_native() {
+  local pkg="$1"
+  if command -v brew &>/dev/null; then
+    brew install "$pkg" >/dev/null 2>&1 || return 1
+  elif command -v apt-get &>/dev/null; then
+    sudo apt-get install -y "$pkg" >/dev/null 2>&1 || return 1
+  else
+    return 1
+  fi
+}
+
+# ─── fetch a file from this repo's raw API (avoids CDN cache) ────────
+VBOX_REPO_API="https://api.github.com/repos/zobinHuang/vibebox/contents"
+vbox_fetch() {
+  # vbox_fetch <repo-path> <local-dest>
+  local src="$1" dest="$2"
+  curl -fsSL -H 'Accept: application/vnd.github.v3.raw' \
+    "${VBOX_REPO_API}/${src}" -o "$dest" 2>/dev/null
+}
+
 # ──────────────────────────────────────────────────────────────────────
 COMMIT_HASH="$(curl -fsSL https://api.github.com/repos/zobinHuang/vibebox/commits/main 2>/dev/null | grep -m1 '"sha"' | cut -d'"' -f4 | cut -c1-7)" || true
 COMMIT_HASH="${COMMIT_HASH:-unknown}"
@@ -123,6 +144,38 @@ desc = "Search file contents (grep via ripgrep)"
 run = "search --via=rg"
 TOML
 info "Patched keymap.toml"
+
+# ─── 2b. mpv + socat (vibe music engine) ─────────────────────────────
+echo ""
+echo "── mpv & socat (vibe music) ─────────────────────"
+
+# mpv
+if command -v mpv &>/dev/null; then
+  info "mpv already installed ($(mpv --version 2>/dev/null | head -1 | cut -d' ' -f1-2))"
+elif [ -x "$(vbox_bin mpv)" ]; then
+  info "mpv already installed in vibebox env"
+else
+  warn "Installing mpv …"
+  if install_native mpv || install_pkg mpv; then
+    info "mpv installed"
+  else
+    warn "mpv install failed — vibe music will be unavailable. Install manually: brew install mpv  /  sudo apt install mpv"
+  fi
+fi
+
+# socat (used by vbox-music to talk to mpv's IPC socket)
+if command -v socat &>/dev/null; then
+  info "socat already installed"
+elif [ -x "$(vbox_bin socat)" ]; then
+  info "socat already installed in vibebox env"
+else
+  warn "Installing socat …"
+  if install_native socat || install_pkg socat; then
+    info "socat installed"
+  else
+    warn "socat install failed — vibe music will be unavailable. Install manually: brew install socat  /  sudo apt install socat"
+  fi
+fi
 
 # ─── patch tmux config ────────────────────────────────────────────────
 TMUX_CONF="$HOME/.tmux.conf"
