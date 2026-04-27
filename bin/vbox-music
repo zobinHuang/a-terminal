@@ -879,6 +879,12 @@ cmd_diag() {
   echo ""
   echo "music.log tail:"
   tail -n 20 "$VBOX_LOG" 2>/dev/null | sed 's/^/  /' || echo "  (no log)"
+  echo ""
+  echo "music-stderr.log tail (hook stderr — actual error messages):"
+  tail -n 30 "${VBOX_LOG_DIR}/music-stderr.log" 2>/dev/null | sed 's/^/  /' || echo "  (none)"
+  echo ""
+  echo "music-trace.log tail (only present if VBOX_TRACE=1):"
+  tail -n 40 "${VBOX_LOG_DIR}/music-trace.log" 2>/dev/null | sed 's/^/  /' || echo "  (none)"
   echo "─────────────────────────────────────────────────"
 }
 
@@ -901,6 +907,16 @@ Usage: vbox-music <command> [args...]
 USAGE
 }
 
+# Optional bash trace for hook debugging. Set VBOX_TRACE=1 in the env
+# (e.g., from a tmux hook) to capture every line and its expansion to
+# music-trace.log so we can pinpoint where focus is exiting non-zero.
+if [ "${VBOX_TRACE:-}" = "1" ]; then
+  exec 9>>"${VBOX_LOG_DIR}/music-trace.log"
+  BASH_XTRACEFD=9
+  PS4='+ [$(date +%H:%M:%S)] ${BASH_SOURCE##*/}:${LINENO}: '
+  set -x
+fi
+
 cmd="${1:-}"
 shift || true
 case "$cmd" in
@@ -920,3 +936,8 @@ case "$cmd" in
   -h|--help|help|"") usage ;;
   *) usage; exit 1 ;;
 esac
+rc=$?
+if [ "$rc" != 0 ]; then
+  log "dispatcher: cmd='$cmd' args='$*' rc=$rc"
+fi
+exit "$rc"
