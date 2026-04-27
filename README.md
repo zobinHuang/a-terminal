@@ -11,9 +11,10 @@ curl -fsSL -H 'Accept: application/vnd.github.v3.raw' https://api.github.com/rep
 ## What it installs
 
 - **tmux** — session, tab, and pane management (with zellij-style keybindings)
-- **Claude Code** — AI coding assistant
 - **vbox** — command to manage tmux sessions
 - **Vibe music** *(opt-in)* — ambient internet radio that reacts to each pane's activity
+
+Vibebox also wires hooks into `~/.claude/settings.json` so vibe music reflects Claude Code activity, but it does **not** install Claude Code for you — install it separately via <https://claude.ai/install> if you want that integration.
 
 ## Usage
 

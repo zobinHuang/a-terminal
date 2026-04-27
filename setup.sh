@@ -318,22 +318,11 @@ set number
 VIM
 info "Patched .vimrc (line numbers + syntax highlighting)"
 
-# ─── 3. claude code ──────────────────────────────────────────────────
-echo ""
-echo "── Claude Code ────────────────────────────────────"
-
-if command -v claude &>/dev/null; then
-  info "Claude Code already installed ($(claude --version 2>/dev/null || echo 'unknown version'))"
-else
-  warn "Installing Claude Code …"
-  if curl -fsSL https://claude.ai/install.sh | bash; then
-    info "Claude Code installed"
-  else
-    err "Claude Code installation failed — install manually: https://claude.ai/install"
-  fi
-fi
-
 # ─── merge vbox-music hooks into ~/.claude/settings.json ─────────────
+# Claude Code itself isn't installed by this script (install it however
+# you prefer — https://claude.ai/install or your package manager). We
+# still write the hooks into ~/.claude/settings.json so vibe music
+# transitions correctly the moment you do install Claude Code.
 # Idempotent: a "vbox-music set-state" string acts as the marker. Existing
 # user hooks under PreToolUse / Stop / SubagentStop are preserved by jq's
 # array-concat. If jq isn't available we leave settings.json alone and tell
@@ -636,7 +625,5 @@ echo "                             z   toggle fullscreen"
 echo ""
 echo "  Resize (Ctrl+n):  h/j/k/l or arrows (repeatable)"
 echo ""
-echo "  Tools:"
-echo "    claude     Claude Code"
 echo "══════════════════════════════════════════════════"
 echo ""
