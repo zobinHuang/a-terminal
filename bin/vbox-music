@@ -802,17 +802,33 @@ cmd_set_state() {
   _refresh_pane_intensity "$pane"
 }
 
+_emit_uptime() {
+  # Emits ` running Xm Ys` styled to match the surrounding status bar.
+  # Inlined into cmd_tick so the whole status-right is a single `#()`
+  # subprocess — tmux can re-render in lockstep with one command's
+  # output instead of jittering between two finishing at slightly
+  # different times.
+  local up
+  up="$(vbox-uptime 2>/dev/null)"
+  [ -n "$up" ] && printf ' #[fg=#a6e3a1,nobold]running %s' "$up"
+}
+
 cmd_tick() {
   local sess active_slot
-  sess="$(_session_of)" || return 0
-  [ -n "$sess" ] || return 0
+  sess="$(_session_of)" || { _emit_uptime; return 0; }
+  [ -n "$sess" ] || { _emit_uptime; return 0; }
   active_slot="$(tmux_get "$sess" "@vibe-active-slot")"
-  [ -n "$active_slot" ] || return 0  # render nothing in non-vibe sessions
+  if [ -z "$active_slot" ]; then
+    # non-vibe session — just the uptime portion
+    _emit_uptime
+    return 0
+  fi
 
   local muted
   muted="$(tmux_get "$sess" "@vibe-muted")"
   if [ "$muted" = "1" ]; then
-    printf '🔇 muted'
+    printf '#[fg=#f9e2af]🔇 muted#[default]'
+    _emit_uptime
     return 0
   fi
 
@@ -823,7 +839,8 @@ cmd_tick() {
   active_pid="$(tmux_get  "$sess" "@vibe-mpv-${active_slot_lc}-pid")"
   active_sock="$(tmux_get "$sess" "@vibe-mpv-${active_slot_lc}-sock")"
   if [ -n "$active_pid" ] && ! kill -0 "$active_pid" 2>/dev/null; then
-    printf '📻 off-air'
+    printf '#[fg=#f9e2af]📻 off-air#[default]'
+    _emit_uptime
     return 0
   fi
 
@@ -885,6 +902,7 @@ cmd_tick() {
     "$C_VOL"  "$vol_glyph" \
     "$C_PIPE" \
     "$C_NOTE" "$C_SONG" "$marquee"
+  _emit_uptime
 }
 
 cmd_sync_attached() {

@@ -346,7 +346,7 @@ set -g status-right-length 140
 # When vibe is active, the tick output is roughly:
 #     🌿 cruising · Groove Salad ♫ <26-char scrolling song marquee>
 # which is why status-right-length is generous here.
-set -g status-right "#(vbox-music tick 2>/dev/null)#[default] #[fg=#a6e3a1]running #(vbox-uptime) #[fg=#a6adc8]│ %Y-%m-%d %H:%M "
+set -g status-right "#(vbox-music tick 2>/dev/null)#[default] #[fg=#a6adc8]│ %Y-%m-%d %H:%M "
 set -g status-interval 1
 setw -g window-status-format "#[fg=#a6adc8] #I:#W "
 setw -g window-status-current-format "#[bg=#45475a,fg=#89b4fa,bold] ▸ #I:#W "
