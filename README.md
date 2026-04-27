@@ -112,12 +112,12 @@ The `running …` counter is also per-tab — it resets when you create a new ta
 ✺ █ [locked] ♫ Rifftastic Rampage         # peak intensity, full volume, mood pinned
 ```
 
-- **Intensity** is a single character that pulses each tick between two glyphs. Five levels, scaling with intensity 0.0–1.0:
+- **Intensity** is a single character that loops through a level-specific sequence each tick. Higher levels add one more glyph to the loop, so the cycle gets richer as intensity climbs:
   - level 1 (0.0–0.2): `· • · • …`
-  - level 2 (0.2–0.4): `• ✦ • ✦ …`
-  - level 3 (0.4–0.6): `✦ ✸ ✦ ✸ …`
-  - level 4 (0.6–0.8): `✸ ✹ ✸ ✹ …`
-  - level 5 (0.8–1.0): `✹ ✺ ✹ ✺ …`
+  - level 2 (0.2–0.4): `· • ✦ · • ✦ …`
+  - level 3 (0.4–0.6): `· • ✦ ✸ · • ✦ ✸ …`
+  - level 4 (0.6–0.8): `· • ✦ ✸ ✹ · • ✦ ✸ ✹ …`
+  - level 5 (0.8–1.0): `· • ✦ ✸ ✹ ✺ · • ✦ ✸ ✹ ✺ …`
 
   The character is hardcoded — not configurable from `vibes.conf`.
 - **Volume** is one block-element glyph from a 7-step ladder — `▂` (0–16%) · `▃` (17–32%) · `▄` (33–49%) · `▅` (50–66%) · `▆` (67–82%) · `▇` (83–99%) · `█` (100%).

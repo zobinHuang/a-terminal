@@ -165,16 +165,16 @@ _now_playing() {
   done
 }
 
-# Intensity is rendered as a single character that alternates between
-# two glyphs each tick — gives a "looping pulse" feel that scales with
-# tier. Hardcoded; vibes.conf only defines thresholds + labels now.
+# Intensity is a single character that loops through a level-specific
+# sequence each tick. Hardcoded; vibes.conf only defines thresholds +
+# labels now. Each level adds one more glyph to its loop, so the higher
+# the intensity, the longer (and brighter) the cycle.
 #
-#   level 1 (idle):    · / •     level 4:           ✸ / ✹
-#   level 2:           • / ✦     level 5 (peak):    ✹ / ✺
-#   level 3:           ✦ / ✸
-#
-# Adjacent levels share a glyph so the rise from one tier to the next
-# feels like a continuous escalation rather than a jump.
+#   level 1 (0.0-0.2):  · • · • …
+#   level 2 (0.2-0.4):  · • ✦ · • ✦ …
+#   level 3 (0.4-0.6):  · • ✦ ✸ · • ✦ ✸ …
+#   level 4 (0.6-0.8):  · • ✦ ✸ ✹ · • ✦ ✸ ✹ …
+#   level 5 (0.8-1.0):  · • ✦ ✸ ✹ ✺ · • ✦ ✸ ✹ ✺ …
 _intensity_glyph() {
   local intensity="${1:-0}" level frame
   level="$(awk -v i="$intensity" 'BEGIN{
@@ -183,19 +183,16 @@ _intensity_glyph() {
     if (n > 5) n = 5
     print n
   }')"
-  frame=$(( $(date +%s) % 2 ))
-  case "${level}.${frame}" in
-    1.0) printf '·' ;;
-    1.1) printf '•' ;;
-    2.0) printf '•' ;;
-    2.1) printf '✦' ;;
-    3.0) printf '✦' ;;
-    3.1) printf '✸' ;;
-    4.0) printf '✸' ;;
-    4.1) printf '✹' ;;
-    5.0) printf '✹' ;;
-    5.1) printf '✺' ;;
+  local -a glyphs
+  case "$level" in
+    1) glyphs=('·' '•') ;;
+    2) glyphs=('·' '•' '✦') ;;
+    3) glyphs=('·' '•' '✦' '✸') ;;
+    4) glyphs=('·' '•' '✦' '✸' '✹') ;;
+    5) glyphs=('·' '•' '✦' '✸' '✹' '✺') ;;
   esac
+  frame=$(( $(date +%s) % ${#glyphs[@]} ))
+  printf '%s' "${glyphs[$frame]}"
 }
 
 # Single-char volume glyph from a 7-step block-element ladder.
