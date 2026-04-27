@@ -182,32 +182,45 @@ info "Patched keymap.toml"
 # Colors here use ANSI names so the terminal's own palette drives them
 # instead of yazi's hex defaults (which often clash with terminal themes).
 cat > "$YAZI_THEME" <<'TOML'
-# [vibebox] no-Nerd-Font icon + theme override.
-# Color names below are the ones yazi documents:
-#   black/red/green/yellow/blue/magenta/cyan/white
-#   lightblack/lightred/.../lightwhite
-#   reset
-# (No `darkgray` — that's not a valid yazi color, and using it falls
-# back unpredictably depending on the terminal.)
+# [vibebox] no-Nerd-Font icon + theme override for yazi 26.x.
+#
+# Section names confirmed via `strings` on the yazi binary:
+#   [mgr] [mode] [status] [icon] [which] [tabs] [filetype] [notify]
+# Earlier versions used [manager], which is silently ignored in 26.x.
+#
+# The `?`-icon issue specifically: the default icons in the file list
+# come from `icon_file` / `icon_folder` / `icon_command` keys inside
+# [mgr] — those are bare strings (Nerd-Font codepoints by default).
+# Overriding them is what actually replaces the icons in the file list.
+# The [icon] section is for per-extension/glob/condition overrides on
+# top of the [mgr] defaults.
+#
+# Color names: yazi documents black/red/green/yellow/blue/magenta/cyan/
+# white plus their light* variants and `reset`. No `darkgray`.
 
-[manager]
+[mgr]
 cwd             = { fg = "cyan" }
 hovered         = { reversed = true }
 preview_hovered = { underline = true }
 find_keyword    = { fg = "yellow", italic = true }
 find_position   = { fg = "magenta", bg = "reset", italic = true }
+symlink_target  = { fg = "lightblack" }
 marker_copied   = { fg = "lightgreen",  bg = "lightgreen" }
 marker_cut      = { fg = "lightred",    bg = "lightred" }
 marker_marked   = { fg = "lightblue",   bg = "lightblue" }
 marker_selected = { fg = "lightyellow", bg = "lightyellow" }
-tab_active      = { reversed = true }
-tab_inactive    = {}
-tab_width       = 1
 count_copied    = { fg = "white", bg = "green" }
 count_cut       = { fg = "white", bg = "red" }
 count_selected  = { fg = "white", bg = "blue" }
 border_symbol   = "│"
 border_style    = { fg = "lightblack" }
+syntect_theme   = ""
+# These three are the defaults the file list falls back to when no
+# [icon] rule matches — they're plain strings, so we override with
+# basic Unicode here rather than the bundled Nerd-Font glyphs.
+icon_file       = "·"
+icon_folder     = "▸"
+icon_command    = "$"
 
 [mode]
 normal_main = { fg = "black", bg = "lightblue",    bold = true }
@@ -218,10 +231,17 @@ unset_main  = { fg = "black", bg = "lightmagenta", bold = true }
 unset_alt   = { fg = "lightmagenta", bg = "lightblack" }
 
 [status]
-# Empty separators avoid powerline arrows entirely.
+# Empty separators avoid the bundled Nerd-Font powerline arrows.
 separator_open  = ""
 separator_close = ""
 separator_style = { fg = "lightblack", bg = "lightblack" }
+
+[notify]
+# Notification icons — also default to Nerd-Font glyphs in the bundled
+# preset, surface as ?-boxes when no Nerd Font is installed.
+icon_info  = "i"
+icon_warn  = "!"
+icon_error = "x"
 
 [which]
 mask = { bg = "black" }
@@ -231,14 +251,10 @@ desc = { fg = "magenta" }
 separator       = "  "
 separator_style = { fg = "lightblack" }
 
-# Icons — yazi 26.x's binary only recognizes these `[icon]` keys:
-#   globs, conds, prepend_globs, append_globs,
-#   prepend_dirs, append_dirs, prepend_files, append_files,
-#   prepend_exts, append_exts, prepend_conds, append_conds
-# (No bare `files`, `dirs`, or `exts` — those keys are silently
-# ignored, which is why earlier overrides left the bundled Nerd-Font
-# icons in place.) Putting our wildcard catch-all in `prepend_files`
-# and `prepend_dirs` makes it the first-and-only match yazi tries.
+# Per-extension/glob/condition icon mappings. `prepend_*` is the only
+# valid way to add entries — bare `files`/`dirs`/`exts` aren't part of
+# yazi 26.x's schema. Wildcards in `prepend_files` and `prepend_dirs`
+# act as belt-and-suspenders alongside the [mgr] defaults.
 [icon]
 globs = []
 conds = []
@@ -253,7 +269,7 @@ append_dirs   = []
 prepend_exts  = []
 append_exts   = []
 TOML
-info "Patched theme.toml (plain icons + valid ANSI palette, no Nerd Font)"
+info "Patched theme.toml (correct yazi 26.x sections, no Nerd Font)"
 
 # ─── 2b. mpv + socat (vibe music engine) ─────────────────────────────
 echo ""
