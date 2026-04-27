@@ -357,6 +357,13 @@ else
   err "Failed to install tmux-vibe.conf"
 fi
 
+# shell-hooks.sh — installed always; rc source line only when VBOX_VIBE=1
+if vbox_install_file config/shell-hooks.sh "$VBOX_CFG_DIR/shell-hooks.sh"; then
+  info "Installed shell-hooks.sh"
+else
+  err "Failed to install shell-hooks.sh"
+fi
+
 # stations.conf — preserve user customizations on re-install
 if [ -f "$VBOX_CFG_DIR/stations.conf" ]; then
   info "stations.conf already exists (preserving user edits)"
@@ -508,6 +515,20 @@ fi
 printf '\n%s\n%s\n' "$PATH_MARKER" "$PATH_LINE" >> "$SHELL_RC"
 info "Added vibebox PATH to $(basename "$SHELL_RC")"
 warn "Run 'source $SHELL_RC' or restart your shell"
+
+# ─── opt-in: vibe-music shell hooks ───────────────────────────────────
+# Append a source line for shell-hooks.sh only when VBOX_VIBE=1 was set at
+# install time. The file itself self-gates on @vibe-active-slot, so non-vibe
+# sessions inside an opted-in shell are still no-op.
+HOOK_MARKER="# [vibebox] vibe-hooks"
+HOOK_LINE="[ -f \$HOME/.config/vibebox/shell-hooks.sh ] && . \$HOME/.config/vibebox/shell-hooks.sh"
+# always strip any prior copy first (idempotent re-install / opt-out path)
+sed -i.bak "/$HOOK_MARKER/,+1d" "$SHELL_RC" 2>/dev/null || true
+rm -f "${SHELL_RC}.bak"
+if [ "${VBOX_VIBE:-}" = "1" ]; then
+  printf '\n%s\n%s\n' "$HOOK_MARKER" "$HOOK_LINE" >> "$SHELL_RC"
+  info "Wired vibe-music shell hooks into $(basename "$SHELL_RC") (VBOX_VIBE=1)"
+fi
 
 # ─── done ─────────────────────────────────────────────────────────────
 echo ""
