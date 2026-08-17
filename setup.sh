@@ -612,11 +612,14 @@ PY
     return 2
   fi
 
+  # No backup copy is kept. The merge is already all-or-nothing: it is
+  # built in a temp file and only swapped in once it has been produced
+  # cleanly and is non-empty, so a failed or malformed merge leaves the
+  # original in place untouched rather than needing to be restored.
   if [ "$rc" -ne 0 ] || [ ! -s "$tmp" ]; then
     rm -f "$tmp"
     return 1
   fi
-  cp "$file" "${file}.vibebox.bak" 2>/dev/null || true
   # mktemp is 0600; settings.json holds credentials-adjacent config, so
   # keep it that way rather than inheriting the umask.
   chmod 600 "$tmp" 2>/dev/null || true
@@ -626,7 +629,7 @@ PY
 
 if command -v jq >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1; then
   if vbox_merge_hooks "$CLAUDE_SETTINGS" "$VBOX_CLAUDE_HOOKS"; then
-    info "Merged Claude Code hooks into $CLAUDE_SETTINGS (backup: ${CLAUDE_SETTINGS}.vibebox.bak)"
+    info "Merged Claude Code hooks into $CLAUDE_SETTINGS"
   else
     err "Could not merge Claude Code hooks — $CLAUDE_SETTINGS is not valid JSON. Left it untouched."
   fi

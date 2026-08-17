@@ -138,8 +138,9 @@ State comes from code-agent hooks, which the installer merges in:
 | Codex | `~/.codex/hooks.json` | `UserPromptSubmit`, `Pre`/`PostToolUse` | `Stop`, `SessionStart` | `PermissionRequest` |
 
 Any hooks you have of your own are left alone; re-running the installer replaces
-only the vibebox-owned ones, and the originals are backed up alongside with a
-`.vibebox.bak` suffix.
+only the vibebox-owned ones. The merge is all-or-nothing — it is built off to the
+side and only swapped in once it comes out clean, so a file it can't parse is
+left exactly as it was.
 
 > **Codex needs one manual step.** Codex will not run a hook until you have
 > reviewed it, so after installing, open codex and run `/hooks` → *Trust all and
