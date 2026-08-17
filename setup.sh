@@ -111,21 +111,26 @@ bind -T copy-mode MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "~/.local/
 bind -T copy-mode-vi y send-keys -X copy-pipe-and-cancel "~/.local/bin/osc52-copy"
 
 # ─── smart navigation: Alt + arrows (pane first, then the bar) ──────
-# Walk panes until you hit an edge, then keep going on the status bar.
-# The bar is two-dimensional once agents are running — left/right along a
-# row, up/down between the READY and BUSY rows — so this is the whole
-# navigation story in one gesture: pane first, then bar.
+# Left/right walk panes until you hit an edge, then keep going along the
+# status bar. Once agents are running the bar has two rows, and they are
+# walked as one sequence — the whole READY row, then the whole BUSY row —
+# so stepping right off the end of the top row continues onto the bottom
+# one. That is the order you read the bar in.
+#
+# Up/down stay pane-only. Vertical row-crossing was tried and dropped:
+# with one tab per row every up/down press is a legitimate no-op, which
+# is indistinguishable from a broken keybinding, and Alt+Up/Down is eaten
+# outright by some terminals (VS Code binds it to move-line).
 #
 # With no agent running every tab sits in the ready row, so left/right
-# behave exactly like previous-window/next-window and up/down do nothing,
-# which is what these keys did before the agent bar existed.
+# behave exactly like previous-window/next-window did before the bar.
 #
 # -b is required, not an optimisation: run-shell without it blocks the
 # server until the command returns, and vbox-agent calls back into tmux.
 bind -n M-Left  if-shell -F "#{pane_at_left}"   'run-shell -b "$HOME/.local/bin/vbox-agent nav left #{window_id}"'  "select-pane -L"
 bind -n M-Right if-shell -F "#{pane_at_right}"  'run-shell -b "$HOME/.local/bin/vbox-agent nav right #{window_id}"' "select-pane -R"
-bind -n M-Up    if-shell -F "#{pane_at_top}"    'run-shell -b "$HOME/.local/bin/vbox-agent nav up #{window_id}"'    "select-pane -U"
-bind -n M-Down  if-shell -F "#{pane_at_bottom}" 'run-shell -b "$HOME/.local/bin/vbox-agent nav down #{window_id}"'  "select-pane -D"
+bind -n M-Up    if-shell -F "#{pane_at_top}"    "" "select-pane -U"
+bind -n M-Down  if-shell -F "#{pane_at_bottom}" "" "select-pane -D"
 
 # ─── tab mode: Ctrl+t → action ───────────────────────────────────────
 bind -n C-t switch-client -T tab_mode
@@ -702,9 +707,9 @@ echo "                             z   toggle fullscreen"
 echo ""
 echo "  Resize (Ctrl+n):  h/j/k/l or arrows (repeatable)"
 echo ""
-echo "  Alt+arrows:       panes first, then the status bar."
-echo "                    Once a code agent runs, the bar splits into"
-echo "                    READY / BUSY rows; up/down cross between them."
+echo "  Alt+left/right:   panes first, then along the status bar,"
+echo "                    walking the READY row then the BUSY row."
+echo "  Alt+up/down:      panes only."
 echo ""
 if [ "$VBOX_CODEX_NEEDS_TRUST" -eq 1 ]; then
   echo ""

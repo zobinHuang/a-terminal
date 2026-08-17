@@ -83,14 +83,15 @@ Sessions are named `<username>-<name>`.
 
 | Key | Action |
 |---|---|
-| `Alt+arrows` | Smart navigation — move between panes, then across the bar at the edge |
+| `Alt+left/right` | Move between panes, then along the status bar at the edge |
+| `Alt+up/down` | Move between panes |
 | `F12` | Toggle nested-tmux passthrough (`[PASSTHRU]` shows in status-left) |
 
-`Alt+arrows` walks panes until you hit an edge, then keeps going on the status
-bar. Once the [agent bar](#agent-bar) is showing, the bar is two-dimensional:
-left/right walk along a row and wrap, up/down cross between the READY and BUSY
-rows at the same column. With no agent running, left/right are just
-previous/next tab and up/down do nothing — exactly as before.
+`Alt+left/right` walks panes until you hit an edge, then keeps going along the
+status bar. When the [agent bar](#agent-bar) is showing, both rows are walked as
+one sequence — the whole READY row, then the whole BUSY row — so stepping right
+off the end of the top row continues onto the bottom one, in the order you read
+the bar. With no agent running that's just previous/next tab, as before.
 
 ## Status bar
 
@@ -127,8 +128,8 @@ tabs by what the agent in them is doing:
 disappears; with none working the BUSY row does. Until a code agent runs at all,
 the bar is exactly the single line it has always been.
 
-Navigate it with `Alt+arrows` — left/right along a row, up/down between rows.
-See [Other](#other) above.
+`Alt+left/right` walks both rows as one sequence, so every tab is reachable
+without leaving the keys. See [Other](#other) above.
 
 State comes from code-agent hooks, which the installer merges in:
 
