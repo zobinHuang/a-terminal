@@ -1,0 +1,304 @@
+#!/bin/sh
+# [vibebox] vbox-agent — per-pane code-agent state, and the row count of
+# the two-row agent bar.
+#
+# State lives in tmux options rather than files: a pane option
+# (@vbox-agent-pane) is the source of truth, aggregated up into a window
+# option (@vbox-agent) that the status rows filter on. Options die with
+# their pane/window, so there is no stale state to garbage-collect.
+#
+#   vbox-agent set <pane> <busy|wait|idle|none>
+#   vbox-agent sync [target]     recompute how many bar rows are visible
+#   vbox-agent nav <direction>   move along / between the bar rows
+#   vbox-agent clear [window]    forget a stuck tab's state
+#   vbox-agent debug             dump current state
+#
+# This script never renders the bar. Rendering is pure tmux format (see
+# the @vbox-row-* options in ~/.tmux.conf) so the 1s status redraw costs
+# no subprocesses; all `sync` does is decide which row templates are
+# installed into status-format[] and how many rows tmux should reserve.
+
+set -u
+
+PANE_OPT='@vbox-agent-pane'
+WIN_OPT='@vbox-agent'
+SIG_OPT='@vbox-bar-sig'
+
+usage() {
+  cat >&2 <<'EOF'
+Usage:
+  vbox-agent set <pane> <busy|wait|idle|none>   record a pane's agent state
+  vbox-agent sync [target]                      recompute visible bar rows
+  vbox-agent nav <left|right|up|down> [window]  move along / between rows
+  vbox-agent clear [window]                     forget a stuck tab's state
+  vbox-agent debug                              dump current state
+EOF
+  exit 1
+}
+
+# ─── normalise a state name; empty output means "no agent here" ───────
+norm_state() {
+  case "$1" in
+    busy|wait|idle)     printf '%s' "$1" ;;
+    ''|none|clear|off)  printf '' ;;
+    *) printf 'vbox-agent: unknown state "%s"\n' "$1" >&2; exit 1 ;;
+  esac
+}
+
+# ─── roll every pane's state up into one window state ─────────────────
+# Priority busy > wait > idle: one working pane makes the whole tab busy.
+aggregate_window() {
+  _win="$1"
+  _has_busy=0 _has_wait=0 _has_idle=0
+  # Unset panes emit an empty line, which word-splitting drops for us.
+  for _s in $(tmux list-panes -t "$_win" -F "#{$PANE_OPT}" 2>/dev/null); do
+    case "$_s" in
+      busy) _has_busy=1 ;;
+      wait) _has_wait=1 ;;
+      idle) _has_idle=1 ;;
+    esac
+  done
+  if   [ "$_has_busy" -eq 1 ]; then _new=busy
+  elif [ "$_has_wait" -eq 1 ]; then _new=wait
+  elif [ "$_has_idle" -eq 1 ]; then _new=idle
+  else                              _new=''
+  fi
+  if [ -n "$_new" ]; then
+    tmux set-option -w -t "$_win" "$WIN_OPT" "$_new" 2>/dev/null
+  else
+    tmux set-option -w -t "$_win" -u "$WIN_OPT" 2>/dev/null
+  fi
+}
+
+# ─── rebuild every window's state from the panes that still exist ─────
+# The targeted aggregate above is enough for a state change, but a pane
+# can also vanish without telling us — the agent is killed, the pane is
+# closed mid-run — which would strand its window in BUSY forever. `sync`
+# therefore recomputes every window from scratch. Two tmux reads for the
+# whole server, and only windows whose state actually moved get written.
+resync_all_windows() {
+  { tmux list-windows -a -F "W|#{window_id}|#{$WIN_OPT}" 2>/dev/null
+    tmux list-panes   -a -F "P|#{window_id}|#{$PANE_OPT}" 2>/dev/null
+  } | awk -F'|' '
+      function rank(s) { return (s == "busy") ? 3 : (s == "wait") ? 2 : (s == "idle") ? 1 : 0 }
+      $1 == "W" { cur[$2] = $3; seen[$2] = 1; next }
+      $1 == "P" {
+        r = rank($3)
+        if (r > best[$2]) best[$2] = r
+        next
+      }
+      END {
+        for (w in seen) {
+          s = (best[w] == 3) ? "busy" : (best[w] == 2) ? "wait" : (best[w] == 1) ? "idle" : ""
+          if (s != cur[w]) print "WIN", w, s
+        }
+      }' |
+  while read -r _kind _id _st; do
+    [ "$_kind" = WIN ] || continue
+    if [ -n "${_st:-}" ]; then
+      tmux set-option -w -t "$_id" "$WIN_OPT" "$_st" 2>/dev/null
+    else
+      tmux set-option -w -t "$_id" -u "$WIN_OPT" 2>/dev/null
+    fi
+  done
+}
+
+# ─── forget everything we know about a window ─────────────────────────
+# The escape hatch for a tab stuck in BUSY. An agent that dies without
+# running its SessionEnd hook — SIGKILL, a hard crash — leaves its last
+# state behind, and if the pane itself survives, no tmux hook fires
+# either. There is deliberately no automatic recovery: both signals that
+# look like they should work (is the foreground command a shell? does the
+# pane have child processes?) were measured and neither survives the
+# range of ways an agent gets launched, so both would silently mark live
+# agents as dead. A key you press beats a guess that is wrong quietly.
+cmd_clear() {
+  _win="${1:-}"
+  if [ -z "$_win" ]; then
+    _win="$(tmux display-message -p '#{window_id}' 2>/dev/null)" || exit 0
+  fi
+  [ -n "$_win" ] || exit 0
+  for _p in $(tmux list-panes -t "$_win" -F '#{pane_id}' 2>/dev/null); do
+    tmux set-option -p -t "$_p" -u "$PANE_OPT" 2>/dev/null
+  done
+  tmux set-option -w -t "$_win" -u "$WIN_OPT" 2>/dev/null
+  _sess="$(tmux display-message -p -t "$_win" '#{session_id}' 2>/dev/null)"
+  [ -n "$_sess" ] && sync_session "$_sess"
+  exit 0
+}
+
+# ─── pick the visible rows for one session ────────────────────────────
+sync_session() {
+  _sess="$1"
+  # Someone who has deliberately hidden their status bar should keep it
+  # hidden; never turn it back on to show a row.
+  case "$(tmux display-message -p -t "$_sess" '#{status}' 2>/dev/null)" in
+    off) return 0 ;;
+  esac
+  # Counted through a pipe, not "$(...)", on purpose: a window with no
+  # agent prints an empty line, and command substitution strips *every*
+  # trailing newline — so a session whose last windows are all plain
+  # would silently lose them and drop the READY row.
+  _counts="$(tmux list-windows -t "$_sess" -F "#{$WIN_OPT}" 2>/dev/null | awk '
+      $0 == "busy" { b++; next }
+      { r++; if ($0 == "wait" || $0 == "idle") a++ }
+      END { print b + 0, r + 0, b + a + 0 }')"
+  read -r _busy _rest _agents <<EOF
+$_counts
+EOF
+
+  # Rows are listed top to bottom. The chrome row (hostname / session /
+  # uptime / clock) always comes last so it stays pinned to the bottom of
+  # the screen no matter how many agent rows are showing.
+  #
+  # With no agent anywhere we fall back to "classic": drop every
+  # session-local status-format override so tmux uses its built-in
+  # single-line bar. That makes the bar byte-identical to pre-agent-bar
+  # vibebox for anyone who never runs a code agent.
+  if [ "$_agents" -eq 0 ]; then
+    _rows='classic'
+  else
+    _rows=''
+    [ "$_rest" -gt 0 ] && _rows="$_rows ready"
+    [ "$_busy" -gt 0 ] && _rows="$_rows busy"
+    _rows="$_rows chrome"
+  fi
+
+  # Re-setting identical options still forces a redraw, so skip the whole
+  # write when the layout hasn't actually changed — `set` is called on
+  # every single agent state transition.
+  # display-message, not show-options: an unset user option makes
+  # show-options log "invalid option" into the server message log on
+  # every single call, which is a lot of noise for a normal state.
+  _old="$(tmux display-message -p -t "$_sess" "#{$SIG_OPT}" 2>/dev/null || true)"
+  [ "$_rows" = "${_old:-}" ] && return 0
+
+  # Drop the whole session-local array before rebuilding it. Clearing
+  # index by index is wrong twice over: a shrinking bar would keep a
+  # stale row, and unsetting an index of an array that was never set
+  # leaves an *empty* session-local array behind, which shadows the
+  # global default and blanks the status line entirely.
+  tmux set-option -t "$_sess" -u status-format 2>/dev/null
+
+  if [ "$_rows" = 'classic' ]; then
+    tmux set-option -t "$_sess" -u status 2>/dev/null
+  else
+    _i=0
+    for _r in $_rows; do
+      # Only a short indirection is written here; the real format strings
+      # live in ~/.tmux.conf as @vbox-row-* so this script never has to
+      # quote them.
+      tmux set-option -t "$_sess" "status-format[$_i]" "#{E:@vbox-row-$_r}" 2>/dev/null
+      _i=$((_i + 1))
+    done
+    tmux set-option -t "$_sess" status "$_i" 2>/dev/null
+  fi
+  tmux set-option -t "$_sess" "$SIG_OPT" "$_rows" 2>/dev/null
+}
+
+cmd_set() {
+  [ $# -eq 2 ] || usage
+  _pane="$1"
+  _state="$(norm_state "$2")" || exit 1
+  # Called from code-agent hooks, which must never fail because of us:
+  # outside tmux ($TMUX_PANE unset) this is a silent no-op.
+  [ -n "$_pane" ] || exit 0
+  # Fast path. PreToolUse/PostToolUse fire on every single tool call and
+  # almost always re-assert the state the pane is already in, so one read
+  # short-circuits the five reads and writes a real update costs. This
+  # also doubles as the "does this pane still exist" check.
+  _cur="$(tmux display-message -p -t "$_pane" "#{$PANE_OPT}" 2>/dev/null)" || exit 0
+  [ "$_cur" = "$_state" ] && exit 0
+  if [ -n "$_state" ]; then
+    tmux set-option -p -t "$_pane" "$PANE_OPT" "$_state" 2>/dev/null || exit 0
+  else
+    tmux set-option -p -t "$_pane" -u "$PANE_OPT" 2>/dev/null || exit 0
+  fi
+  _ids="$(tmux display-message -p -t "$_pane" '#{window_id} #{session_id}' 2>/dev/null)" || exit 0
+  [ -n "$_ids" ] || exit 0
+  aggregate_window "${_ids% *}"
+  sync_session "${_ids#* }"
+  exit 0
+}
+
+cmd_sync() {
+  resync_all_windows
+  if [ $# -ge 1 ] && [ -n "$1" ]; then
+    _s="$(tmux display-message -p -t "$1" '#{session_id}' 2>/dev/null)" || exit 0
+    [ -n "$_s" ] && sync_session "$_s"
+    exit 0
+  fi
+  for _s in $(tmux list-sessions -F '#{session_id}' 2>/dev/null); do
+    sync_session "$_s"
+  done
+  exit 0
+}
+
+# ─── move between / along the bar rows ────────────────────────────────
+# The bar is a grid: READY on top, BUSY below, each row in window-index
+# order. left/right walk along the current row and wrap; up/down cross to
+# the other row at the same column, clamped to that row's length.
+#
+# This needs no special case for "the agent bar isn't showing". With no
+# agents anywhere every window lands in the ready row, so left/right walk
+# the whole window list exactly like previous-window/next-window, and
+# up/down find an empty row and do nothing — which is what Alt+arrows at
+# a pane edge already did before this feature existed.
+cmd_nav() {
+  [ $# -ge 1 ] || usage
+  _dir="$1"
+  case "$_dir" in left|right|up|down) ;; *) usage ;; esac
+  _win="${2:-}"
+  if [ -z "$_win" ]; then
+    _win="$(tmux display-message -p '#{window_id}' 2>/dev/null)" || exit 0
+  fi
+  [ -n "$_win" ] || exit 0
+
+  _target="$(tmux list-windows -t "$_win" -F "#{window_id} #{$WIN_OPT}" 2>/dev/null | awk -v cur="$_win" -v dir="$_dir" '
+      $2 == "busy" { busy[++nb] = $1; row[$1] = "b"; col[$1] = nb; next }
+                   { ready[++nr] = $1; row[$1] = "r"; col[$1] = nr }
+      END {
+        if (!(cur in row)) exit
+        r = row[cur]; i = col[cur]
+        if (dir == "left" || dir == "right") {
+          n = (r == "b") ? nb : nr
+          if (n < 2) exit
+          d = (dir == "right") ? 1 : -1
+          j = ((i - 1 + d) % n + n) % n + 1
+          t = (r == "b") ? busy[j] : ready[j]
+        } else if (dir == "up") {
+          if (r == "r" || nr == 0) exit
+          j = (i > nr) ? nr : i
+          t = ready[j]
+        } else {
+          if (r == "b" || nb == 0) exit
+          j = (i > nb) ? nb : i
+          t = busy[j]
+        }
+        print t
+      }')"
+  [ -n "$_target" ] && tmux select-window -t "$_target" 2>/dev/null
+  exit 0
+}
+
+cmd_debug() {
+  printf 'window states:\n'
+  tmux list-windows -a -F '  #{session_name}:#{window_index} #{window_name} -> [#{@vbox-agent}]' 2>/dev/null
+  printf 'pane states:\n'
+  tmux list-panes -a -F '  #{session_name}:#{window_index}.#{pane_index} #{pane_id} -> [#{@vbox-agent-pane}]' 2>/dev/null
+  printf 'bar:\n'
+  tmux list-sessions -F '  #{session_name} rows=#{status} sig=[#{@vbox-bar-sig}]' 2>/dev/null
+}
+
+[ $# -ge 1 ] || usage
+CMD="$1"
+shift
+case "$CMD" in
+  set)        cmd_set "$@" ;;
+  sync)       cmd_sync "$@" ;;
+  clear)      cmd_clear "$@" ;;
+  nav)        cmd_nav "$@" ;;
+  debug)      cmd_debug ;;
+  -h|--help)  usage ;;
+  *)          usage ;;
+esac

@@ -110,17 +110,31 @@ bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "~/.loc
 bind -T copy-mode MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "~/.local/bin/osc52-copy"
 bind -T copy-mode-vi y send-keys -X copy-pipe-and-cancel "~/.local/bin/osc52-copy"
 
-# ─── smart navigation: Alt + arrows (pane first, then tab) ──────────
-bind -n M-Left if-shell -F "#{pane_at_left}" "previous-window" "select-pane -L"
-bind -n M-Right if-shell -F "#{pane_at_right}" "next-window" "select-pane -R"
-bind -n M-Up if-shell -F "#{pane_at_top}" "" "select-pane -U"
-bind -n M-Down if-shell -F "#{pane_at_bottom}" "" "select-pane -D"
+# ─── smart navigation: Alt + arrows (pane first, then the bar) ──────
+# Walk panes until you hit an edge, then keep going on the status bar.
+# The bar is two-dimensional once agents are running — left/right along a
+# row, up/down between the READY and BUSY rows — so this is the whole
+# navigation story in one gesture: pane first, then bar.
+#
+# With no agent running every tab sits in the ready row, so left/right
+# behave exactly like previous-window/next-window and up/down do nothing,
+# which is what these keys did before the agent bar existed.
+#
+# -b is required, not an optimisation: run-shell without it blocks the
+# server until the command returns, and vbox-agent calls back into tmux.
+bind -n M-Left  if-shell -F "#{pane_at_left}"   'run-shell -b "$HOME/.local/bin/vbox-agent nav left #{window_id}"'  "select-pane -L"
+bind -n M-Right if-shell -F "#{pane_at_right}"  'run-shell -b "$HOME/.local/bin/vbox-agent nav right #{window_id}"' "select-pane -R"
+bind -n M-Up    if-shell -F "#{pane_at_top}"    'run-shell -b "$HOME/.local/bin/vbox-agent nav up #{window_id}"'    "select-pane -U"
+bind -n M-Down  if-shell -F "#{pane_at_bottom}" 'run-shell -b "$HOME/.local/bin/vbox-agent nav down #{window_id}"'  "select-pane -D"
 
 # ─── tab mode: Ctrl+t → action ───────────────────────────────────────
 bind -n C-t switch-client -T tab_mode
 bind -T tab_mode n new-window -c "#{pane_current_path}"
 bind -T tab_mode r command-prompt -I "#W" "rename-window '%%'"
 bind -T tab_mode x kill-window
+# Clear a tab stuck showing an agent state — an agent SIGKILLed with its
+# pane left open never runs SessionEnd, and no tmux hook fires either.
+bind -T tab_mode c run-shell -b "$HOME/.local/bin/vbox-agent clear #{window_id}"
 bind -T tab_mode Left previous-window
 bind -T tab_mode Right next-window
 bind -T tab_mode h previous-window
@@ -207,11 +221,44 @@ set -g status-right-length 80
 # Per-tab uptime (#(vbox-uptime)) + clock. vbox-uptime prints the elapsed
 # time since the current window (tab) was created, falling back to session
 # creation for windows that pre-date the install.
-set -g status-right "#[fg=#a6e3a1]running #(vbox-uptime)#[default] #[fg=#a6adc8]│ %Y-%m-%d %H:%M "
+set -g status-right "#[fg=#a6e3a1]running #($HOME/.local/bin/vbox-uptime)#[default] #[fg=#a6adc8]│ %Y-%m-%d %H:%M "
 set -g status-interval 1
-setw -g window-status-format "#[fg=#a6adc8] #I:#W "
-setw -g window-status-current-format "#[bg=#45475a,fg=#89b4fa,bold] ▸ #I:#W "
+setw -g window-status-format "#[fg=#a6adc8] #I:#{=/14/…:window_name} "
+setw -g window-status-current-format "#[bg=#45475a,fg=#89b4fa,bold] ▸ #I:#{=/14/…:window_name} "
 setw -g window-status-separator ""
+
+# ─── agent bar: READY / BUSY rows ────────────────────────────────────
+# Each window carries a @vbox-agent option (busy | wait | idle | unset)
+# written by `vbox-agent`, which code-agent hooks call. The rows below
+# filter the window list on it, entirely in tmux's format language — no
+# #(), so the 1s redraw stays free of subprocesses (see commit 1f15349
+# for what a second #() did to refresh behaviour).
+#
+# Two conventions keep these strings readable:
+#   * one attribute per #[...] — a comma inside #[bg=x,fg=y] would be
+#     read as a #{?...} argument separator and split the conditional.
+#   * the row templates live here as user options; vbox-agent only ever
+#     writes `status-format[N] = #{E:@vbox-row-<name>}` into a session,
+#     so it never has to re-quote any of this.
+
+# READY row items — anything not busy: waiting on you, idle, or a plain
+# tab that has never run an agent (dim, no glyph).
+set -g @vbox-ready-item "#{?#{==:#{@vbox-agent},busy},,#[range=window|#{window_index}]#{?#{==:#{@vbox-agent},wait},#[fg=#f9e2af] ! #I:#{=/14/…:window_name} ,#{?#{==:#{@vbox-agent},idle},#[fg=#a6e3a1] ○ #I:#{=/14/…:window_name} ,#[fg=#6c7086]   #I:#{=/14/…:window_name} }}#[default]#[norange]}"
+set -g @vbox-ready-cur  "#{?#{==:#{@vbox-agent},busy},,#[range=window|#{window_index}]#[list=focus]#[bg=#45475a]#[fg=#89b4fa]#[bold] ▸ #I:#{=/14/…:window_name} #[default]#[norange]#[list=on]}"
+
+# BUSY row items — agent currently working.
+set -g @vbox-busy-item "#{?#{==:#{@vbox-agent},busy},#[range=window|#{window_index}]#[fg=#fab387] ● #I:#{=/14/…:window_name} #[default]#[norange],}"
+set -g @vbox-busy-cur  "#{?#{==:#{@vbox-agent},busy},#[range=window|#{window_index}]#[list=focus]#[bg=#45475a]#[fg=#fab387]#[bold] ▸ ● #I:#{=/14/…:window_name} #[default]#[norange]#[list=on],}"
+
+# Row templates. #{W:normal,current} loops the window list and picks the
+# second format for the current window, so neither item format has to
+# test for it.
+set -g @vbox-row-ready "#[align=left]#[bg=#a6e3a1]#[fg=#1e1e2e]#[bold] READY #[default] #[list=on]#[list=left-marker]<#[list=right-marker]>#[list=on]#{W:#{E:@vbox-ready-item},#{E:@vbox-ready-cur}}#[nolist]"
+set -g @vbox-row-busy  "#[align=left]#[bg=#fab387]#[fg=#1e1e2e]#[bold] BUSY  #[default] #[list=on]#[list=left-marker]<#[list=right-marker]>#[list=on]#{W:#{E:@vbox-busy-item},#{E:@vbox-busy-cur}}#[nolist]"
+# Chrome row — the default status line minus the window list, which the
+# agent rows have taken over. Always the bottom row, so the clock stays
+# put as rows appear and disappear above it.
+set -g @vbox-row-chrome "#[align=left range=left #{E:status-left-style}]#[push-default]#{T;=/#{status-left-length}:status-left}#[pop-default]#[norange default]#[align=right range=right #{E:status-right-style}]#[push-default]#{T;=/#{status-right-length}:status-right}#[pop-default]#[norange default]"
 
 # ─── pane borders ────────────────────────────────────────────────────
 set -g pane-border-style "fg=#45475a"
@@ -223,6 +270,27 @@ set -g pane-active-border-style "fg=#89b4fa"
 #     recent tmux builds (the strftime %s format isn't reliably compiled in).
 set-hook -g after-new-window  'run-shell -b "tmux set-option -w -t #{window_id} @vbox-window-created \"$(date +%s)\""'
 set-hook -g after-new-session 'run-shell -b "tmux set-option -w -t #{window_id} @vbox-window-created \"$(date +%s)\""'
+
+# ─── agent bar: keep the row count in step with windows and panes ────
+# These must come last. set-hook -g *replaces* a hook array, so an
+# appended entry placed above the uptime stamps would be silently wiped
+# by them; -ga below appends to what those two just set.
+set-hook -ga after-new-window  'run-shell -b "$HOME/.local/bin/vbox-agent sync"'
+set-hook -ga after-new-session 'run-shell -b "$HOME/.local/bin/vbox-agent sync"'
+# -g, not -ga, for these: nothing else writes them, and sourcing this
+# file again (which is exactly what a hot upgrade does) would otherwise
+# append a duplicate every time, so each event would fire sync N times.
+# The two above must stay -ga because the uptime stamps own index 0.
+set-hook -g  session-created   'run-shell -b "$HOME/.local/bin/vbox-agent sync"'
+set-hook -g  client-attached   'run-shell -b "$HOME/.local/bin/vbox-agent sync"'
+set-hook -g  window-unlinked   'run-shell -b "$HOME/.local/bin/vbox-agent sync"'
+# A pane going away takes its agent with it; without these, a tab whose
+# agent was killed mid-run would sit in BUSY forever. Both are needed and
+# they don't overlap: a pane whose command exits fires pane-exited, while
+# `Ctrl+p x` runs kill-pane, which fires only after-kill-pane.
+set-hook -g  pane-exited       'run-shell -b "$HOME/.local/bin/vbox-agent sync"'
+set-hook -g  after-kill-pane   'run-shell -b "$HOME/.local/bin/vbox-agent sync"'
+set-hook -g  pane-died         'run-shell -b "$HOME/.local/bin/vbox-agent sync"'
 TMUX
 info "Patched .tmux.conf (tabs, panes, Alt keybindings, status bar)"
 
@@ -251,13 +319,13 @@ set number
 VIM
 info "Patched .vimrc (line numbers + syntax highlighting)"
 
-# ─── 3. vbox-uptime helper ───────────────────────────────────────────
+# ─── 3. helper scripts ───────────────────────────────────────────────
 echo ""
-echo "── vbox-uptime ───────────────────────────────────"
+echo "── helpers ───────────────────────────────────────"
 
 mkdir -p "$HOME/.local/bin"
 
-# vbox-uptime — always overwrite so re-running setup.sh upgrades it
+# Always overwrite so re-running setup.sh upgrades these
 _vbox_install_or_fail() {
   # _vbox_install_or_fail <repo-path> <dest> <label>
   if vbox_install_file "$1" "$2"; then
@@ -270,6 +338,11 @@ _vbox_install_or_fail() {
 if _vbox_install_or_fail bin/vbox-uptime "$HOME/.local/bin/vbox-uptime" "vbox-uptime"; then
   chmod +x "$HOME/.local/bin/vbox-uptime"
   info "Installed vbox-uptime"
+fi
+
+if _vbox_install_or_fail bin/vbox-agent "$HOME/.local/bin/vbox-agent" "vbox-agent"; then
+  chmod +x "$HOME/.local/bin/vbox-agent"
+  info "Installed vbox-agent"
 fi
 
 # ─── 4. install vbox command ─────────────────────────────────────
@@ -415,6 +488,196 @@ for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
   rm -f "${RC}.bak"
 done
 
+# ─── 5. code-agent hooks ─────────────────────────────────────────────
+echo ""
+echo "── code-agent hooks ──────────────────────────────"
+
+CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+CODEX_HOOKS="${CODEX_HOME:-$HOME/.codex}/hooks.json"
+VBOX_CODEX_NEEDS_TRUST=0
+
+# Quoted heredoc on purpose: $HOME and $TMUX_PANE must survive into the
+# settings file and be expanded by the hook's own shell at fire time, not
+# baked in here.
+#
+# Event choices worth recording:
+#   * UserPromptSubmit is the primary busy signal. PreToolUse alone
+#     leaves a gap between submitting a prompt and the first tool call,
+#     during which the tab would still read as idle.
+#   * PostToolUse restores busy after you approve a permission prompt,
+#     which is what clears the `wait` state.
+#   * Notification's matcher matches the notification *type*, so it is
+#     scoped to the ones that actually block on you. Plain idle_prompt is
+#     deliberately excluded — it fires just because you stepped away, and
+#     would eventually paint every idle tab yellow.
+#   * StopFailure matters: a turn killed by an API error never fires
+#     Stop, so without it a rate-limited tab sits in BUSY forever.
+#   * SubagentStop is deliberately absent — a subagent finishing does not
+#     mean the main agent stopped working. (The old vibe-music config got
+#     this wrong.)
+#   * Stop / UserPromptSubmit / PostToolBatch take no matcher at all, so
+#     none is set; the ".*" in the old config was silently ignored.
+#   * The two tool hooks are async so they add no latency to every single
+#     tool call — measured at ~18ms each otherwise, and they fire twice
+#     per call. The turn-boundary hooks stay synchronous, where ordering
+#     against each other is what actually matters.
+VBOX_CLAUDE_HOOKS="$(cat <<'JSON'
+{
+  "SessionStart":     [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" idle" } ] } ],
+  "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" busy" } ] } ],
+  "PreToolUse":       [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" busy", "async": true } ] } ],
+  "PostToolUse":      [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" busy", "async": true } ] } ],
+  "Notification":     [ { "matcher": "permission_prompt|elicitation_dialog",
+                          "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" wait" } ] } ],
+  "Stop":             [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" idle" } ] } ],
+  "StopFailure":      [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" idle" } ] } ],
+  "SessionEnd":       [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" none" } ] } ]
+}
+JSON
+)"
+
+# Codex 0.132+ has its own hook engine, and its hooks.json uses the same
+# shape as Claude's "hooks" key, so the same merge works on both files.
+# The event set differs though:
+#   * PermissionRequest replaces Claude's Notification as the "blocked on
+#     you" signal — it is the event codex fires when a tool call needs a
+#     decision, which is exactly what `wait` means.
+#   * No StopFailure — codex has no such event, so a turn killed by an API
+#     error is caught by the SessionEnd / pane-exit paths instead.
+#   * No "async": codex 0.132 prints `skipping async hook ... async hooks
+#     are not supported yet` and drops the hook entirely, so the tool
+#     hooks here are synchronous even though the Claude ones aren't.
+VBOX_CODEX_HOOKS="$(cat <<'JSON'
+{
+  "SessionStart":      [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" idle" } ] } ],
+  "UserPromptSubmit":  [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" busy" } ] } ],
+  "PreToolUse":        [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" busy" } ] } ],
+  "PostToolUse":       [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" busy" } ] } ],
+  "PermissionRequest": [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" wait" } ] } ],
+  "Stop":              [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" idle" } ] } ],
+  "SessionEnd":        [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" none" } ] } ]
+}
+JSON
+)"
+
+# Strip every hook we have ever owned, then re-add — that keeps re-runs
+# idempotent and cleans up the dead `vbox-music` hooks left behind by
+# installs that predate its removal. Matching on the command text is the
+# marker; nothing else in the file is touched.
+vbox_merge_hooks() {
+  local file="$1" add="$2" tmp rc
+  mkdir -p "$(dirname "$file")"
+  [ -f "$file" ] || printf '{}\n' > "$file"
+  tmp="$(mktemp)" || return 3
+
+  if command -v jq >/dev/null 2>&1; then
+    jq --argjson add "$add" '
+      def strip:
+        with_entries(
+          .value |= ( map(.hooks |= map(select((.command // "") | test("vbox-(agent|music)") | not)))
+                    | map(select((.hooks | length) > 0)) )
+        )
+        | with_entries(select((.value | length) > 0));
+      .hooks = ((.hooks // {}) | strip)
+      | reduce ($add | to_entries)[] as $e (.; .hooks[$e.key] = ((.hooks[$e.key] // []) + $e.value))
+    ' "$file" > "$tmp" 2>/dev/null
+    rc=$?
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 - "$file" "$add" "$tmp" <<'PY'
+import json, re, sys
+src, add, dest = sys.argv[1], json.loads(sys.argv[2]), sys.argv[3]
+with open(src) as f:
+    doc = json.load(f)
+owned = re.compile(r"vbox-(agent|music)")
+kept = {}
+for event, groups in (doc.get("hooks") or {}).items():
+    survivors = []
+    for group in groups:
+        handlers = [h for h in group.get("hooks", []) if not owned.search(h.get("command", ""))]
+        if handlers:
+            group = dict(group, hooks=handlers)
+            survivors.append(group)
+    if survivors:
+        kept[event] = survivors
+for event, groups in add.items():
+    kept[event] = kept.get(event, []) + groups
+doc["hooks"] = kept
+with open(dest, "w") as f:
+    json.dump(doc, f, indent=2)
+    f.write("\n")
+PY
+    rc=$?
+  else
+    rm -f "$tmp"
+    return 2
+  fi
+
+  if [ "$rc" -ne 0 ] || [ ! -s "$tmp" ]; then
+    rm -f "$tmp"
+    return 1
+  fi
+  cp "$file" "${file}.vibebox.bak" 2>/dev/null || true
+  # mktemp is 0600; settings.json holds credentials-adjacent config, so
+  # keep it that way rather than inheriting the umask.
+  chmod 600 "$tmp" 2>/dev/null || true
+  mv "$tmp" "$file"
+  return 0
+}
+
+if command -v jq >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1; then
+  if vbox_merge_hooks "$CLAUDE_SETTINGS" "$VBOX_CLAUDE_HOOKS"; then
+    info "Merged Claude Code hooks into $CLAUDE_SETTINGS (backup: ${CLAUDE_SETTINGS}.vibebox.bak)"
+  else
+    err "Could not merge Claude Code hooks — $CLAUDE_SETTINGS is not valid JSON. Left it untouched."
+  fi
+
+  # Only wire up codex if it is actually installed, rather than creating
+  # config for a tool that isn't there.
+  if command -v codex >/dev/null 2>&1; then
+    if vbox_merge_hooks "$CODEX_HOOKS" "$VBOX_CODEX_HOOKS"; then
+      info "Merged Codex hooks into $CODEX_HOOKS"
+      VBOX_CODEX_NEEDS_TRUST=1
+    else
+      err "Could not merge Codex hooks — $CODEX_HOOKS is not valid JSON. Left it untouched."
+    fi
+  fi
+else
+  warn "Neither jq nor python3 found; skipped code-agent hook setup."
+  warn "Add the \"hooks\" entries from the vibebox README to $CLAUDE_SETTINGS by hand."
+fi
+
+# ─── 6. hot reload ───────────────────────────────────────────────────
+echo ""
+echo "── reload ────────────────────────────────────────"
+
+# Everything under ~/.local/bin re-executes from scratch on every call,
+# so those are live the moment they're written. The tmux config is the
+# exception: a running server holds its own copy of every binding,
+# format and hook, so sessions open right now would keep the old ones
+# until they were restarted. Push the new config in instead.
+#
+# Repeating this is safe. Every line in the config replaces rather than
+# appends — which is exactly why the sync hooks use `set-hook -g`; with
+# `-ga` each re-source would stack another copy and every event would
+# fire sync N times. The agent rows survive too, because status-format
+# holds an indirection (`#{E:@vbox-row-...}`) rather than the template
+# itself, so live sessions pick up new row rendering for free.
+#
+# Code-agent hooks need nothing here: both Claude Code and codex re-read
+# their hook config mid-session (codex asks you to re-trust it first).
+if command -v tmux >/dev/null 2>&1 && tmux list-sessions >/dev/null 2>&1; then
+  VBOX_LIVE="$(tmux list-sessions 2>/dev/null | wc -l | tr -d ' ')"
+  if tmux source-file "$TMUX_CONF" 2>/dev/null; then
+    "$HOME/.local/bin/vbox-agent" sync >/dev/null 2>&1 || true
+    info "Reloaded into $VBOX_LIVE running session(s) — no restart needed"
+  else
+    warn "Could not reload the running tmux server."
+    warn "Run this by hand to finish the upgrade: tmux source-file ~/.tmux.conf"
+  fi
+else
+  info "No running tmux session to reload"
+fi
+
 # ─── done ─────────────────────────────────────────────────────────────
 echo ""
 echo "══════════════════════════════════════════════════"
@@ -436,5 +699,18 @@ echo "                             z   toggle fullscreen"
 echo ""
 echo "  Resize (Ctrl+n):  h/j/k/l or arrows (repeatable)"
 echo ""
+echo "  Alt+arrows:       panes first, then the status bar."
+echo "                    Once a code agent runs, the bar splits into"
+echo "                    READY / BUSY rows; up/down cross between them."
+echo ""
+if [ "$VBOX_CODEX_NEEDS_TRUST" -eq 1 ]; then
+  echo ""
+  echo "  ─────────────────────────────────────────────"
+  echo "  ONE MANUAL STEP for codex:"
+  echo "    Codex will not run a newly written hook until you have"
+  echo "    reviewed it. Open codex and run  /hooks  to trust them,"
+  echo "    or the BUSY row will stay empty for codex tabs."
+  echo "  ─────────────────────────────────────────────"
+fi
 echo "══════════════════════════════════════════════════"
 echo ""
