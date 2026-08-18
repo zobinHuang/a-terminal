@@ -13,8 +13,20 @@ curl -fsSL -H 'Accept: application/vnd.github.v3.raw' https://api.github.com/rep
 ## Usage
 
 ```bash
-vbox new <name>       vbox ls
-vbox attach <name>    vbox kill <name>       vbox exit
+# create a session and attach to it
+vbox new <name>
+
+# attach to an existing session
+vbox attach <name>
+
+# list sessions
+vbox ls
+
+# kill a session by name
+vbox kill <name>
+
+# kill the session you're in
+vbox exit
 ```
 
 | Key | |
