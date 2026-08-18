@@ -1,6 +1,6 @@
 # VibeBox
 
-Keep your coding agents running, and see which one needs you.
+A simple tool to keep your coding agents running.
 
 ![VibeBox](docs/screenshot.png)
 
