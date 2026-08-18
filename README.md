@@ -2,6 +2,8 @@
 
 One-line setup for a vibe-coding terminal environment.
 
+![VibeBox](docs/screenshot.png)
+
 ```bash
 curl -fsSL -H 'Accept: application/vnd.github.v3.raw' https://api.github.com/repos/zobinHuang/vibebox/contents/setup.sh | bash
 ```
@@ -49,12 +51,6 @@ Named `<username>-<name>`.
 ## Agent bar
 
 Tabs split into two rows by what the agent in them is doing:
-
-```
- READY     1:shell    2:notes  ○ 3:agent  ! 5:api
- BUSY    ▸ ● 4:kernel  ● 6:paper
- VibeBox [host]  ◆ session              running 5m 30s │ 2026-06-13 14:14
-```
 
 `●` working · `○` idle · `!` blocked on a prompt · dim = no agent · `▸` current
 
