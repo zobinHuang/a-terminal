@@ -17,8 +17,6 @@ vbox new <name>       vbox ls
 vbox attach <name>    vbox kill <name>       vbox exit
 ```
 
-`●` working · `○` idle · `!` blocked · dim = no agent · `▸` current
-
 | Key | |
 |---|---|
 | `Ctrl+t` `n` `r` `x` | tab: new · rename · close |
