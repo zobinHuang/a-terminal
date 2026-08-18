@@ -1,10 +1,8 @@
 # VibeBox
 
-![VibeBox](docs/screenshot.png)
+<img src="./docs/screenshot.png" />
 
-<div align="center">
-    <b>A simple tool to keep your coding agents running.</b>
-</div>
+> A simple tool to keep your coding agents running
 
 ## Install
 
