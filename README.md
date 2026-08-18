@@ -1,8 +1,10 @@
 # VibeBox
 
-A simple tool to keep your coding agents running.
-
 ![VibeBox](docs/screenshot.png)
+
+<div align="center">
+    <b>A simple tool to keep your coding agents running.</b>
+</div>
 
 ## Install
 
@@ -29,4 +31,4 @@ vbox kill <name>
 vbox exit
 ```
 
-[Keybindings](docs/keybindings.md)
+See [keybindings](docs/keybindings.md).
